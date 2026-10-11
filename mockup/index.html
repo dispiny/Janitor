@@ -7,9 +7,9 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <style>
     :root {
-      --bg: #f4f1ea;
-      --surface: #fffcf8;
-      --wash: #ebe6dc;
+      --bg: #ffffff;
+      --surface: #ffffff;
+      --wash: #f4f4f5;
       --text: #1c1b19;
       --muted: #6f6a62;
       --faint: #948e84;
@@ -167,7 +167,7 @@
       padding: 9px 12px;
       color: var(--muted);
     }
-    .nav-btn[aria-current="page"] { background: var(--surface); color: var(--text); font-weight: 600; }
+    .nav-btn[aria-current="page"] { background: var(--wash); color: var(--text); font-weight: 600; }
     .account { margin-top: auto; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 0 10px 6px; }
     .who { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
     .main { width: min(1040px, 100%); margin: 0; padding: 36px 32px 80px; }
@@ -190,7 +190,7 @@
     }
     .card {
       background: var(--surface);
-      border: 0;
+      border: 1px solid var(--line);
       border-radius: 16px;
       padding: 18px;
     }
@@ -221,7 +221,7 @@
       margin-top: 16px;
     }
     .server, .svc, .guest, .pve-card {
-      border: 0;
+      border: 1px solid var(--line);
       border-radius: 16px;
       background: var(--surface);
       min-width: 0;
