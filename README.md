@@ -5,13 +5,62 @@
 
 ## 구성
 
-| 구성 | 역할 |
-| --- | --- |
-| Cloudflare Worker (`src/`) | UI 정적 파일 + API (`/api/*`) |
-| Supabase | Auth, 집/서버/서비스/속도 기록, RLS |
-| Home agent (`agent/`) | WOL, 공인 IP, 헬스 체크, Proxmox 동기화, 속도 측정 (cloudflared 옆 상시 기기) |
+| 구성 | 역할 | 비용 |
+| --- | --- | --- |
+| Cloudflare Worker (`src/` + `public/`) | UI + API (`/api/*`), `*.workers.dev` | **무료** (하루 10만 요청) |
+| Supabase Free | Auth, Postgres, RLS | **무료** (프로젝트 2개 등 플랜 한도) |
+| Home agent (`agent/`) | 집 안 항상 켜진 기기 (cloudflared 옆) | 로컬/자택 하드웨어 |
 
 비밀값(`SLACK_WEBHOOK_URL`, `UPLUS_ROUTER_PASSWORD`, Proxmox 토큰 비밀, `AGENT_TOKEN`)은 git에 넣지 않습니다.
+
+## 무료 배포 (권장: Cloudflare Workers)
+
+Workers Free는 계정당 **하루 10만 요청**, Worker 크기·정적 자산까지 취미/개인 콘솔에 충분합니다.  
+별도 VPS나 Pages 요금 없이 `workers.dev` URL로 공개할 수 있습니다.
+
+### 1) 본인 Cloudflare 계정에 올리기
+
+```bash
+npm install
+npx wrangler login          # 브라우저에서 무료 Cloudflare 계정 연결
+npm run deploy              # → https://janitor.<your-subdomain>.workers.dev
+npx wrangler secret put SLACK_WEBHOOK_URL   # 선택
+```
+
+### 2) Supabase Auth URL 맞추기
+
+Supabase 대시보드 → **Authentication → URL Configuration**
+
+- Site URL: `https://janitor.<your-subdomain>.workers.dev`
+- Redirect URLs: 위 URL 추가
+
+**Authentication → Providers → Email → Confirm email** 을 끄면 가입 직후 바로 로그인됩니다.
+
+이 저장소에 연결된 Supabase 프로젝트: `ypklxfwpbyroxdolgiun` (ap-northeast-2, Free).
+
+### 3) 홈 에이전트
+
+```bash
+cd agent
+cp .env.example .env
+# JANITOR_API_URL=https://janitor.<your-subdomain>.workers.dev
+# AGENT_TOKEN=콘솔 설정에서 발급한 값
+npm install && npm start
+```
+
+에이전트는 집 안에서만 돌리면 되고, 클라우드 요금은 없습니다.
+
+### 무료 티어에서 알아둘 점
+
+| 항목 | Free 한도 / 메모 |
+| --- | --- |
+| Worker 요청 | 100,000/일 (초과 시 1027) |
+| CPU/요청 | 10ms — UI·짧은 API에는 여유 |
+| Slack 웹훅 | Worker 시크릿만 넣으면 됨 (선택) |
+| Supabase | Free 프로젝트로 Auth+DB 유지 |
+| 커스텀 도메인 | 없어도 `workers.dev`로 충분 |
+
+유료가 필요해지는 경우는 요청량이 하루 10만을 넘거나, Worker CPU가 긴 Proxmox 프록시를 Worker 안에서 돌릴 때뿐입니다. 지금 구조는 **무거운 작업은 집 에이전트**, Worker는 얇은 API라 Free에 맞습니다.
 
 ## 로컬 실행
 
@@ -22,30 +71,6 @@ npm run dev
 ```
 
 브라우저에서 Worker 로컬 URL을 연 뒤 **계정 만들기**로 빈 집을 만듭니다. 서버·서비스 샘플은 넣지 않습니다.
-
-### 홈 에이전트
-
-```bash
-cd agent
-cp .env.example .env
-# 콘솔 설정에서 발급한 AGENT_TOKEN, 배포된 JANITOR_API_URL 입력
-npm install
-npm start
-```
-
-에이전트가 폴링하면 현황의 공인 IP·서버 on/off·헬스·속도가 채워집니다.
-
-## 배포
-
-```bash
-npx wrangler secret put SLACK_WEBHOOK_URL   # 선택
-npm run deploy
-```
-
-Supabase 대시보드에서 **Authentication → Providers → Email → Confirm email** 을 끄면 가입 직후 바로 로그인됩니다.  
-Authentication → URL Configuration에 Worker URL을 Site URL / Redirect URLs로 추가하세요.
-
-이 저장소에 연결된 Supabase 프로젝트: `ypklxfwpbyroxdolgiun` (ap-northeast-2).
 
 ## API 요약
 

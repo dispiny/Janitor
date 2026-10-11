@@ -7,7 +7,9 @@
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    // API must hit the Worker before SPA fallback serves index.html
+    "run_worker_first": ["/api/*"]
   },
   "observability": {
     "enabled": true,
