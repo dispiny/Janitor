@@ -33,11 +33,14 @@ describe("home agent HTTP API", () => {
     const body = (await res.json()) as {
       service: string;
       tunnelHostname: string;
-      capabilities: { wakeManual: boolean };
+      capabilities: { wakeManual: boolean; wakeUplus: boolean };
+      uplusConfigured?: boolean;
     };
     assert.equal(body.service, "janitor-home-agent");
     assert.equal(body.tunnelHostname, "agent.example.trycloudflare.com");
     assert.equal(body.capabilities.wakeManual, true);
+    assert.equal(body.capabilities.wakeUplus, false);
+    assert.equal(body.uplusConfigured, undefined);
   });
 
   it("validates wake body", async () => {
@@ -68,5 +71,39 @@ describe("home agent HTTP API", () => {
       body: JSON.stringify({ mode: "uplus", device: "거실-PC" }),
     });
     assert.equal(res.status, 501);
+  });
+
+  it("returns 400 with code when uplus env is missing", async () => {
+    const app = createApp(config);
+    const res = await app.request("/v1/wake", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer test-token",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ mode: "uplus", device: "거실-PC" }),
+    });
+    assert.equal(res.status, 400);
+    const body = (await res.json()) as { error: string };
+    assert.equal(body.error, "uplus_not_configured");
+  });
+
+  it("returns 502 when http check expectation fails", async () => {
+    const app = createApp(config);
+    const res = await app.request("/v1/checks/http", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer test-token",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        url: "https://example.com",
+        expectStatus: 418,
+      }),
+    });
+    assert.equal(res.status, 502);
+    const body = (await res.json()) as { ok: boolean; status: number };
+    assert.equal(body.ok, false);
+    assert.equal(body.status, 200);
   });
 });
