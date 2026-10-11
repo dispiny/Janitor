@@ -184,14 +184,9 @@
 
     .metrics {
       display: grid;
-      grid-template-columns: 1fr 1fr 1.2fr;
+      grid-template-columns: 1.15fr 1fr 0.9fr;
       gap: 12px;
       margin-bottom: 8px;
-    }
-    .status-line.mono {
-      font-family: var(--mono);
-      font-size: 22px;
-      letter-spacing: -0.02em;
     }
     .card {
       background: var(--surface);
@@ -199,16 +194,34 @@
       border-radius: 16px;
       padding: 18px;
     }
-    .card-label { color: var(--muted); font-size: 14px; }
-    .status-line { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 28px; font-weight: 500; }
+    .card-label { color: var(--muted); font-size: 13px; font-weight: 500; }
+    .status-line { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 24px; font-weight: 600; }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: #12a150; display: inline-block; }
-    .sub { color: var(--muted); font-size: 14px; margin-top: 8px; }
-    .speeds { display: flex; gap: 36px; margin-top: 6px; }
-    .speeds b { font-size: 28px; font-weight: 500; letter-spacing: -0.03em; }
-    .speeds span { display: block; color: var(--muted); font-size: 13px; font-weight: 400; }
-    .bars { display: flex; align-items: flex-end; gap: 5px; height: 52px; margin-top: 16px; }
-    .bar { flex: 1; background: #171a20; min-height: 4px; }
+    .sub { color: var(--muted); font-size: 13px; margin-top: 8px; }
+    .kv { display: grid; gap: 8px; margin-top: 14px; }
+    .kv-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      font-size: 13px;
+    }
+    .kv-row span { color: var(--muted); }
+    .kv-row b {
+      font-family: var(--mono);
+      font-weight: 500;
+      font-size: 13px;
+      letter-spacing: -0.02em;
+      text-align: right;
+    }
+    .speeds { display: flex; gap: 28px; margin-top: 6px; }
+    .speeds b { font-size: 26px; font-weight: 600; letter-spacing: -0.03em; }
+    .speeds span { display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
+    .bars { display: flex; align-items: flex-end; gap: 4px; height: 40px; margin-top: 14px; }
+    .bar { flex: 1; background: #171a20; min-height: 4px; border-radius: 2px 2px 0 0; }
     .bar.low { background: var(--danger); }
+    .stat-num { font-size: 24px; font-weight: 600; margin-top: 6px; letter-spacing: -0.03em; }
+    .stat-num em { font-style: normal; color: var(--muted); font-weight: 500; }
 
     .section-head {
       display: flex;
@@ -408,7 +421,7 @@
   <section class="auth" id="auth">
     <div class="auth-bar">
       <div class="mark">JANITOR</div>
-      <div class="auth-note">시안 · 흰 배경 · 공인 IP · 헬스 체크</div>
+      <div class="auth-note">시안 · 라이트</div>
     </div>
     <div class="auth-main">
       <div class="auth-card">
@@ -465,21 +478,21 @@
         <div class="page-head">
           <div>
             <h1 id="dash-title">우리집</h1>
-            <p class="lede">회선, 공인 IP, 서버, 직접 띄운 서비스의 헬스 체크를 한 화면에서 봅니다.</p>
+            <p class="lede">네트워크와 집 안 상태를 한눈에 보고, 깨우거나 관리 화면으로 넘어갑니다.</p>
           </div>
           <button class="ghost" id="refresh" type="button">상태 다시 읽기</button>
         </div>
         <div class="banner" id="dash-alert" hidden></div>
         <div class="metrics">
           <article class="card">
-            <div class="card-label">회선</div>
+            <div class="card-label">네트워크</div>
             <div class="status-line"><span class="dot"></span>연결됨</div>
-            <p class="sub">지연 12 ms · U+ 광랜 · 게이트웨이 응답</p>
-          </article>
-          <article class="card">
-            <div class="card-label">공인 IP</div>
-            <div class="status-line mono" id="public-ip">203.0.113.42</div>
-            <p class="sub" id="public-ip-meta">IPv4 · 집 에이전트가 확인 · 약 1분 전</p>
+            <div class="kv">
+              <div class="kv-row"><span>공인 IP</span><b id="public-ip">203.0.113.42</b></div>
+              <div class="kv-row"><span>지연</span><b>12 ms</b></div>
+              <div class="kv-row"><span>회선</span><b>U+ 광랜</b></div>
+              <div class="kv-row"><span>확인</span><b id="public-ip-meta">약 1분 전</b></div>
+            </div>
           </article>
           <article class="card">
             <div class="card-label">속도</div>
@@ -490,6 +503,15 @@
             <p class="sub" id="dash-threshold">임계값 100 Mbps · 정상</p>
             <div class="bars" id="dash-bars"></div>
           </article>
+          <article class="card">
+            <div class="card-label">상태 요약</div>
+            <div class="stat-num" id="summary-servers">3<em>/4</em> 서버</div>
+            <p class="sub" id="summary-services">서비스 3/4 정상 · 에이전트 연결됨</p>
+            <div class="kv" style="margin-top:12px">
+              <div class="kv-row"><span>꺼진 서버</span><b id="summary-off">1</b></div>
+              <div class="kv-row"><span>헬스 실패</span><b id="summary-down">1</b></div>
+            </div>
+          </article>
         </div>
         <div class="section-head">
           <h2>서버</h2>
@@ -498,7 +520,7 @@
         <div class="list" id="dash-servers"></div>
         <div class="section-head">
           <h2>서비스</h2>
-          <button class="primary" id="add-svc-dash" type="button">서비스 추가</button>
+          <button class="ghost" type="button" id="goto-services">전체 보기</button>
         </div>
         <div class="banner" id="health-alert" hidden></div>
         <div class="svc-grid" id="dash-services"></div>
@@ -923,16 +945,19 @@
       return `${names} 헬스 체크가 기대 응답이 아닙니다. ${state.channel} 로 Slack 알림을 보냈습니다.`;
     }
 
-    function renderServices(target, withDelete) {
+    function renderServices(target, withDelete, items) {
+      const list = items || state.services;
       target.replaceChildren();
-      if (!state.services.length) {
+      if (!list.length) {
         const empty = document.createElement("div");
         empty.className = "empty";
-        empty.textContent = "등록된 서비스가 없습니다. 헬스 체크 주소를 추가하면 됩니다.";
+        empty.textContent = items
+          ? "실패한 헬스 체크가 없습니다."
+          : "등록된 서비스가 없습니다. 헬스 체크 주소를 추가하면 됩니다.";
         target.appendChild(empty);
         return;
       }
-      state.services.forEach((service) => target.appendChild(serviceCard(service, withDelete)));
+      list.forEach((service) => target.appendChild(serviceCard(service, withDelete)));
     }
 
     function serviceCard(service, withDelete) {
@@ -1045,8 +1070,18 @@
       $("dash-down").textContent = state.down.toFixed(1);
       $("dash-up").textContent = state.up.toFixed(1);
       $("public-ip").textContent = state.publicIp;
-      $("public-ip-meta").textContent = `IPv4 · 집 에이전트가 확인 · ${state.publicIpChecked}`;
+      $("public-ip-meta").textContent = state.publicIpChecked;
       if ($("agent-status")) $("agent-status").textContent = state.agentHost;
+      const onCount = state.servers.filter((server) => server.on).length;
+      const offCount = state.servers.length - onCount;
+      const downCount = state.services.filter((service) => !service.ok).length;
+      const okCount = state.services.length - downCount;
+      $("summary-servers").innerHTML = `${onCount}<em>/${state.servers.length || 0}</em> 서버`;
+      $("summary-services").textContent = state.services.length
+        ? `서비스 ${okCount}/${state.services.length} 정상 · 에이전트 연결됨`
+        : "등록된 서비스 없음 · 에이전트 연결됨";
+      $("summary-off").textContent = String(offCount);
+      $("summary-down").textContent = String(downCount);
       $("speed-down").textContent = state.down.toFixed(1);
       $("speed-up").textContent = state.up.toFixed(1);
       $("threshold").value = state.threshold;
@@ -1055,7 +1090,7 @@
       renderAlert();
       renderServers($("dash-servers"), state.servers, false);
       renderServers($("server-list"), visibleServers(), true);
-      renderServices($("dash-services"), false);
+      renderServices($("dash-services"), false, state.services.filter((service) => !service.ok));
       renderServices($("service-list"), true);
       renderPve();
       const members = $("members");
@@ -1333,7 +1368,10 @@
       $("svc-modal").hidden = false;
       $("svc-name").focus();
     }
-    $("add-svc-dash").addEventListener("click", openServiceModal);
+    $("goto-services").addEventListener("click", () => {
+      state.view = "services";
+      render();
+    });
     $("add-svc-list").addEventListener("click", openServiceModal);
     $("close-svc").addEventListener("click", () => { $("svc-modal").hidden = true; });
     $("check-all").addEventListener("click", () => {
