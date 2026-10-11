@@ -218,3 +218,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Janitor home agent
+agent/node_modules/
+agent/dist/
+agent/.env

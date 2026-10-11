@@ -1,0 +1,84 @@
+{
+  "service": "janitor-home-agent",
+  "basePath": "/v1",
+  "auth": {
+    "header": "Authorization",
+    "scheme": "Bearer",
+    "env": "AGENT_TOKEN"
+  },
+  "discovery": {
+    "env": "CF_TUNNEL_HOSTNAME",
+    "url": "https://$CF_TUNNEL_HOSTNAME"
+  },
+  "endpoints": [
+    {
+      "method": "GET",
+      "path": "/healthz",
+      "auth": false,
+      "response": { "ok": true }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/status",
+      "auth": true,
+      "response": {
+        "ok": true,
+        "service": "janitor-home-agent",
+        "tunnelHostname": "string|null",
+        "capabilities": {
+          "wakeManual": "boolean",
+          "wakeUplus": "boolean",
+          "publicIp": "boolean",
+          "httpCheck": "boolean"
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/network/public-ip",
+      "auth": true,
+      "response": {
+        "ip": "string",
+        "checkedAt": "iso8601",
+        "source": "string"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/v1/wake",
+      "auth": true,
+      "body": [
+        {
+          "mode": "manual",
+          "mac": "AA:BB:CC:DD:EE:FF",
+          "broadcast": "192.168.0.255",
+          "port": 9
+        },
+        {
+          "mode": "uplus",
+          "device": "거실-PC"
+        }
+      ],
+      "notes": "uplus returns 501 until router provider is implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/checks/http",
+      "auth": true,
+      "body": {
+        "url": "https://service.home/healthz",
+        "expectStatus": 200,
+        "timeoutMs": 8000,
+        "useHealthToken": false
+      },
+      "response": {
+        "url": "string",
+        "ok": "boolean",
+        "status": "number",
+        "expectStatus": "number",
+        "ms": "number",
+        "error": "string?"
+      }
+    }
+  ]
+}
