@@ -1,0 +1,1059 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Janitor 시안</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <style>
+    :root {
+      --bg: #ffffff;
+      --wash: #f4f4f4;
+      --text: #171a20;
+      --muted: #5c5e62;
+      --faint: #8e8e8e;
+      --line: #e5e5e5;
+      --line-strong: #d0d1d2;
+      --danger: #b74134;
+      --ok: #171a20;
+      --sans: "Pretendard", "Helvetica Neue", Helvetica, Arial, "WenQuanYi Micro Hei", sans-serif;
+      --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html { color-scheme: light; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.5;
+      font-weight: 400;
+    }
+    button, input, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    h1, h2, p { margin: 0; }
+    [hidden] { display: none !important; }
+
+    button, input, select { color: var(--text); background: #fff; }
+    .auth {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+    }
+    .auth-bar, .top {
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 28px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+    .mark {
+      font-size: 15px;
+      font-weight: 500;
+      letter-spacing: 0.22em;
+    }
+    .auth-note { color: var(--muted); font-size: 13px; }
+    .auth-main {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      padding: 72px 20px 48px;
+    }
+    .auth-card { width: min(420px, 100%); }
+    .auth-card h1 {
+      font-size: 34px;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      margin: 28px 0 8px;
+    }
+    .tabs { display: flex; gap: 22px; }
+    .tab {
+      border: 0;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      background: transparent;
+      padding: 8px 0;
+      color: var(--muted);
+    }
+    .tab[aria-selected="true"] {
+      color: var(--text);
+      border-bottom-color: var(--text);
+      font-weight: 500;
+    }
+    .primary, .ghost, .warn-btn {
+      border-radius: 4px;
+      min-height: 40px;
+      padding: 0 20px;
+      font-weight: 500;
+    }
+    .primary {
+      background: #171a20;
+      color: #fff;
+      border: 0;
+      width: 100%;
+    }
+    .primary:hover { background: #393c41; }
+    .ghost, .warn-btn {
+      background: #fff;
+      color: #171a20;
+      border: 0;
+      box-shadow: inset 0 0 0 3px #171a20;
+    }
+    .page-head .primary, .section-head .primary, .row-actions .primary, .modal-actions .primary {
+      width: auto;
+    }
+    .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+    .field span, .label { font-size: 14px; color: var(--text); }
+    input, select {
+      border: 1px solid var(--line-strong);
+      border-radius: 4px;
+      min-height: 40px;
+      padding: 8px 12px;
+      outline: none;
+      width: 100%;
+    }
+    input:focus, select:focus { border-color: #171a20; }
+    .hint { color: var(--muted); font-size: 13px; margin-top: 14px; }
+    .error { color: var(--danger); font-size: 13px; min-height: 1.2em; }
+    .stack { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+    .stack .ghost, .stack .primary { width: 100%; }
+    .row-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .text-btn {
+      border: 0;
+      background: transparent;
+      color: #171a20;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      padding: 0 2px;
+      border-radius: 0;
+    }
+    .text-btn:disabled { color: var(--faint); text-decoration: none; cursor: default; }
+
+    .shell { min-height: 100vh; background: #fff; }
+    .top { position: sticky; top: 0; z-index: 5; gap: 20px; }
+    .brand { display: flex; align-items: baseline; gap: 14px; min-width: 180px; }
+    .house { color: var(--muted); font-size: 14px; }
+    nav { display: flex; gap: 22px; flex: 1; }
+    .nav-btn {
+      background: transparent;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      padding: 20px 0 18px;
+      color: var(--muted);
+    }
+    .nav-btn[aria-current="page"] { color: var(--text); border-bottom-color: #171a20; font-weight: 500; }
+    .account { display: flex; align-items: center; gap: 16px; }
+    .who { color: var(--muted); font-size: 13px; }
+    .main { width: min(1080px, calc(100% - 48px)); margin: 0 auto; padding: 48px 0 80px; }
+    .page-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .page-head h1 { font-size: 40px; font-weight: 500; letter-spacing: -0.02em; }
+    .lede { color: var(--muted); margin-top: 6px; font-size: 15px; }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: 0.7fr 1.3fr;
+      gap: 48px;
+      padding-bottom: 28px;
+      margin-bottom: 36px;
+      border-bottom: 1px solid var(--line);
+    }
+    .card { background: transparent; border: 0; padding: 0; }
+    .card-label { color: var(--muted); font-size: 14px; }
+    .status-line { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 28px; font-weight: 500; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #12a150; display: inline-block; }
+    .sub { color: var(--muted); font-size: 14px; margin-top: 8px; }
+    .speeds { display: flex; gap: 36px; margin-top: 6px; }
+    .speeds b { font-size: 28px; font-weight: 500; letter-spacing: -0.03em; }
+    .speeds span { display: block; color: var(--muted); font-size: 13px; font-weight: 400; }
+    .bars { display: flex; align-items: flex-end; gap: 5px; height: 52px; margin-top: 16px; }
+    .bar { flex: 1; background: #171a20; min-height: 4px; }
+    .bar.low { background: var(--danger); }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 28px 0 0;
+    }
+    .section-head h2 { font-size: 20px; font-weight: 500; }
+    .list { border-top: 1px solid var(--line); margin-top: 12px; }
+    .server {
+      display: grid;
+      grid-template-columns: 1.4fr 90px 120px auto;
+      gap: 12px;
+      align-items: center;
+      padding: 18px 0;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+    .idx { display: none; }
+    .server .name { font-size: 16px; font-weight: 500; }
+    .server .role, .meta { color: var(--muted); font-size: 13px; }
+    .badge { font-size: 14px; color: var(--muted); }
+    .badge.on { color: var(--text); }
+    .badge.off { color: var(--muted); }
+    .actions { display: flex; gap: 16px; justify-content: flex-end; }
+
+    .guests { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 16px; }
+    .guest { background: var(--wash); border-radius: 4px; padding: 14px; }
+    .guest b { display: block; font-weight: 500; }
+    .filters { display: flex; gap: 22px; border-bottom: 1px solid var(--line); }
+
+    .banner {
+      background: var(--wash);
+      color: var(--text);
+      border-left: 3px solid var(--danger);
+      padding: 14px 16px;
+      margin-bottom: 20px;
+    }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; }
+    .rule {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 0;
+      border-top: 1px solid var(--line);
+    }
+    .env {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--wash);
+      color: var(--text);
+      border-radius: 4px;
+      padding: 12px;
+      line-height: 1.7;
+    }
+    .member {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+      padding: 14px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(23, 26, 32, 0.4);
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      z-index: 20;
+    }
+    .modal {
+      width: min(520px, 100%);
+      background: #fff;
+      color: var(--text);
+      border-radius: 4px;
+      padding: 28px 28px 22px;
+      max-height: min(86vh, 760px);
+      overflow: auto;
+    }
+    .modal h2 { font-size: 28px; font-weight: 500; margin-bottom: 6px; }
+    .choice { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 12px; }
+    .choice button {
+      border: 1px solid var(--line-strong);
+      background: #fff;
+      border-radius: 4px;
+      min-height: 36px;
+      padding: 0 12px;
+    }
+    .choice button[aria-pressed="true"] {
+      background: #171a20;
+      color: #fff;
+      border-color: #171a20;
+    }
+    .check { display: flex; gap: 8px; align-items: center; margin: 8px 0 12px; }
+    .check input { width: auto; min-height: auto; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
+      background: #fff;
+      color: var(--text);
+      border: 1px solid var(--line);
+      padding: 12px 16px;
+      border-radius: 4px;
+      max-width: min(420px, calc(100% - 32px));
+      z-index: 30;
+      box-shadow: 0 8px 24px rgba(23, 26, 32, 0.08);
+    }
+    .empty {
+      border-top: 1px solid var(--line);
+      padding: 28px 0;
+      color: var(--muted);
+    }
+
+    @media (max-width: 900px) {
+      .auth-bar, .top { height: auto; flex-wrap: wrap; padding: 12px 16px; gap: 8px; }
+      nav { order: 3; width: 100%; gap: 16px; overflow-x: auto; }
+      .metrics, .split, .server, .guests { grid-template-columns: 1fr; }
+      .main { width: min(100% - 32px, 1080px); padding-top: 28px; }
+      .page-head h1, .auth-card h1, .modal h2 { font-size: 30px; }
+      .actions { justify-content: flex-start; }
+      .brand { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <section class="auth" id="auth">
+    <div class="auth-bar">
+      <div class="mark">JANITOR</div>
+      <div class="auth-note">시안 · 라이트</div>
+    </div>
+    <div class="auth-main">
+      <div class="auth-card">
+      <div class="tabs" role="tablist">
+        <button class="tab" id="tab-login" type="button" role="tab" aria-selected="true" aria-controls="panel-login">로그인</button>
+        <button class="tab" id="tab-signup" type="button" role="tab" aria-selected="false" aria-controls="panel-signup">계정 만들기</button>
+      </div>
+      <h1 id="auth-title">로그인</h1>
+
+      <form id="panel-login" role="tabpanel">
+        <label class="field"><span>이메일</span><input id="login-email" type="email" autocomplete="username" placeholder="you@example.com" required></label>
+        <label class="field"><span>비밀번호</span><input id="login-password" type="password" autocomplete="current-password" placeholder="비밀번호" required></label>
+        <p class="error" id="login-error"></p>
+        <div class="stack">
+          <button class="primary" type="submit">로그인</button>
+          <button class="ghost" id="demo-enter" type="button">샘플 집으로 시안 보기</button>
+        </div>
+        <p class="hint">인증은 Supabase Auth 시안입니다. 이 파일에는 키, 웹훅, 공유기 비밀번호가 없습니다.</p>
+      </form>
+
+      <form id="panel-signup" role="tabpanel" hidden>
+        <label class="field"><span>이메일</span><input id="signup-email" type="email" autocomplete="username" placeholder="you@example.com" required></label>
+        <label class="field"><span>비밀번호</span><input id="signup-password" type="password" autocomplete="new-password" minlength="8" placeholder="8자 이상" required></label>
+        <label class="field"><span>집 이름</span><input id="signup-house" type="text" placeholder="우리집" required></label>
+        <p class="error" id="signup-error"></p>
+        <button class="primary" type="submit">집과 계정 만들기</button>
+        <p class="hint">집은 계정마다 따로 생깁니다. 서버와 멤버는 만든 뒤에 자유롭게 더합니다.</p>
+      </form>
+      </div>
+    </div>
+  </section>
+
+  <div class="shell" id="app" hidden>
+    <header class="top">
+      <div class="brand">
+        <div class="mark">JANITOR</div>
+        <div class="house" id="house-name">우리집</div>
+      </div>
+      <nav>
+        <button class="nav-btn" type="button" data-view="dashboard" aria-current="page">현황</button>
+        <button class="nav-btn" type="button" data-view="servers">서버</button>
+        <button class="nav-btn" type="button" data-view="speed">속도</button>
+        <button class="nav-btn" type="button" data-view="settings">설정</button>
+      </nav>
+      <div class="account">
+        <div class="who" id="who">demo@example.com</div>
+        <button class="text-btn" id="logout" type="button">로그아웃</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <section id="view-dashboard">
+        <div class="page-head">
+          <div>
+            <h1 id="dash-title">우리집</h1>
+            <p class="lede">회선, 속도, 서버, Proxmox를 한 화면에서 봅니다.</p>
+          </div>
+          <button class="ghost" id="refresh" type="button">상태 다시 읽기</button>
+        </div>
+        <div class="banner" id="dash-alert" hidden></div>
+        <div class="metrics">
+          <article class="card">
+            <div class="card-label">회선</div>
+            <div class="status-line"><span class="dot"></span>연결됨</div>
+            <p class="sub">지연 12 ms · U+ 광랜 · 게이트웨이 응답</p>
+          </article>
+          <article class="card">
+            <div class="card-label">속도</div>
+            <div class="speeds">
+              <div><span>다운로드</span><b id="dash-down">842.4</b></div>
+              <div><span>업로드</span><b id="dash-up">201.1</b></div>
+            </div>
+            <p class="sub" id="dash-threshold">임계값 100 Mbps · 정상</p>
+            <div class="bars" id="dash-bars"></div>
+          </article>
+        </div>
+        <div class="section-head">
+          <h2>서버</h2>
+          <button class="primary" id="add-from-dash" type="button">서버 추가</button>
+        </div>
+        <div class="list" id="dash-servers"></div>
+        <div class="section-head">
+          <h2>Proxmox</h2>
+        </div>
+        <div id="dash-pve"></div>
+      </section>
+
+      <section id="view-servers" hidden>
+        <div class="page-head">
+          <div>
+            <h1>서버</h1>
+            <p class="lede">대수는 고정이 아닙니다. 필요할 때 등록하고 지웁니다.</p>
+          </div>
+          <button class="primary" id="add-from-list" type="button">서버 추가</button>
+        </div>
+        <div class="filters" role="group" aria-label="서버 필터">
+          <button class="tab" type="button" data-filter="all" aria-selected="true">전체</button>
+          <button class="tab" type="button" data-filter="off">꺼짐</button>
+          <button class="tab" type="button" data-filter="pve">Proxmox</button>
+        </div>
+        <div class="list" id="server-list" style="margin-top:12px"></div>
+      </section>
+
+      <section id="view-speed" hidden>
+        <div class="page-head">
+          <div>
+            <h1>인터넷 속도</h1>
+            <p class="lede">임계값 아래로 떨어지면 Slack으로 알립니다.</p>
+          </div>
+        </div>
+        <div class="banner" id="speed-alert" hidden></div>
+        <div class="split">
+          <article class="card">
+            <div class="card-label">최근 측정</div>
+            <div class="speeds">
+              <div><span>다운로드</span><b id="speed-down">842.4</b></div>
+              <div><span>업로드</span><b id="speed-up">201.1</b></div>
+            </div>
+            <div class="bars" id="speed-bars"></div>
+            <p class="sub">샘플 기록입니다. 측정기 연동 전의 화면입니다.</p>
+          </article>
+          <article class="card">
+            <div class="card-label">Slack 알림</div>
+            <label class="field" style="margin-top:12px">
+              <span>다운로드 임계값 (Mbps)</span>
+              <input id="threshold" type="number" min="1" max="10000" value="100">
+            </label>
+            <label class="field">
+              <span>채널 표시 이름</span>
+              <input id="slack-channel" type="text" value="#homelab">
+            </label>
+            <p class="hint">웹훅 주소는 <span class="env">SLACK_WEBHOOK_URL</span> 환경 변수로만 둡니다. 저장소와 이 화면에 값을 넣지 않습니다.</p>
+            <div class="row-actions">
+              <button class="warn-btn" id="simulate-drop" type="button">속도 저하 시뮬레이션</button>
+              <button class="ghost" id="simulate-ok" type="button">정상으로 되돌리기</button>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="view-settings" hidden>
+        <div class="page-head">
+          <div>
+            <h1>설정</h1>
+            <p class="lede">공개 저장소에 올라가면 안 되는 값은 이름만 보여 줍니다.</p>
+          </div>
+        </div>
+        <div class="split">
+          <article class="card">
+            <div class="card-label">집</div>
+            <label class="field" style="margin-top:12px">
+              <span>집 이름</span>
+              <input id="house-input" type="text" value="우리집">
+            </label>
+            <div class="label">멤버</div>
+            <div id="members"></div>
+            <form id="invite-form" class="row-actions" style="margin-top:10px">
+              <input id="invite-email" type="email" placeholder="invite@example.com" required>
+              <button class="primary" type="submit">초대</button>
+            </form>
+            <p class="hint">멤버 추가는 Supabase에 집 단위로 저장될 자리입니다.</p>
+          </article>
+          <article class="card">
+            <div class="card-label">연동</div>
+            <div class="rule"><span>Supabase</span><span class="meta">계정, 집, 서버 목록</span></div>
+            <div class="env">SUPABASE_URL<br>SUPABASE_ANON_KEY</div>
+            <div class="rule"><span>U+ 공유기 WOL</span><span class="meta">등록 장치로 깨우기</span></div>
+            <div class="env">UPLUS_ROUTER_URL<br>UPLUS_ROUTER_PASSWORD</div>
+            <div class="rule"><span>Proxmox API</span><span class="meta">토큰 비밀은 서버에만</span></div>
+            <div class="env">PVE_TOKEN_SECRET</div>
+            <p class="hint">service role 키, 웹훅, 공유기 비밀번호, Proxmox 토큰 비밀은 클라이언트와 git에 두지 않습니다. anon key는 RLS 뒤에서만 씁니다.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="overlay" id="server-modal" hidden>
+    <form class="modal" id="server-form" role="dialog" aria-labelledby="server-title">
+      <h2 id="server-title">서버 추가</h2>
+      <p class="lede">Wake 방식과 Proxmox 연동은 서버마다 고릅니다.</p>
+      <label class="field" style="margin-top:14px"><span>이름</span><input id="srv-name" required placeholder="작업 PC"></label>
+      <label class="field"><span>역할</span><input id="srv-role" placeholder="데스크톱, NAS, 노드…"></label>
+      <label class="field"><span>관리 페이지 URL</span><input id="srv-url" type="url" placeholder="https://pve.home:8006"></label>
+      <div class="label">Wake-on-LAN</div>
+      <div class="choice" id="wol-choice">
+        <button type="button" data-wol="off" aria-pressed="false">사용 안 함</button>
+        <button type="button" data-wol="uplus" aria-pressed="true">U+ 공유기</button>
+        <button type="button" data-wol="manual" aria-pressed="false">수동 등록</button>
+      </div>
+      <div id="wol-uplus">
+        <label class="field"><span>공유기에 등록된 장치 이름</span><input id="srv-uplus" placeholder="거실-PC"></label>
+        <p class="hint">공유기 비밀번호는 입력하지 않습니다. 런타임에 UPLUS_ROUTER_PASSWORD를 읽습니다.</p>
+      </div>
+      <div id="wol-manual" hidden>
+        <label class="field"><span>MAC 주소</span><input id="srv-mac" placeholder="02:00:00:00:00:10" pattern="^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$"></label>
+        <label class="field"><span>브로드캐스트</span><input id="srv-bcast" value="192.168.0.255"></label>
+        <label class="field"><span>포트</span><input id="srv-port" type="number" value="9" min="1" max="65535"></label>
+      </div>
+      <label class="check"><input id="srv-pve" type="checkbox"> Proxmox 노드로 연동</label>
+      <div id="pve-fields" hidden>
+        <label class="field"><span>API 주소</span><input id="srv-pve-host" type="url" placeholder="https://pve.home:8006"></label>
+        <label class="field"><span>노드 이름</span><input id="srv-pve-node" placeholder="pve-node"></label>
+        <label class="field"><span>토큰 ID</span><input id="srv-pve-token" placeholder="janitor@pve!monitor"></label>
+        <label class="field"><span>토큰 비밀</span><input id="srv-pve-secret" type="password" placeholder="저장 후 다시 표시하지 않음" autocomplete="new-password"></label>
+        <p class="hint">비밀 입력칸은 시안입니다. 값은 메모리에만 있다가 저장 동작에서 버립니다.</p>
+      </div>
+      <p class="error" id="srv-error"></p>
+      <div class="modal-actions">
+        <button class="ghost" id="close-server" type="button">취소</button>
+        <button class="primary" type="submit">추가</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="overlay" id="redirect-modal" hidden>
+    <div class="modal" role="dialog" aria-labelledby="redir-title">
+      <h2 id="redir-title">관리 페이지로 이동합니다</h2>
+      <p class="lede" id="redir-url" style="margin:12px 0;font-family:var(--mono);font-size:14px"></p>
+      <p class="hint">시안에서는 외부 주소를 실제로 열지 않습니다. 구현 시 이 주소로 리다이렉트합니다.</p>
+      <div class="modal-actions">
+        <button class="primary" id="close-redir" type="button">돌아가기</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script>
+    const historyMbps = [860, 840, 910, 790, 820, 47, 800, 830, 870, 842, 810, 842];
+    const sampleServers = [
+      {
+        id: "pc",
+        name: "작업 PC",
+        role: "데스크톱",
+        on: false,
+        wol: { mode: "uplus", device: "거실-PC" },
+        manageUrl: "",
+        pve: null
+      },
+      {
+        id: "pve",
+        name: "pve-node",
+        role: "Proxmox",
+        on: true,
+        wol: { mode: "manual", mac: "02:00:00:00:00:10", broadcast: "192.168.0.255", port: 9 },
+        manageUrl: "https://pve.home:8006",
+        pve: {
+          host: "https://pve.home:8006",
+          node: "pve-node",
+          tokenId: "janitor@pve!monitor",
+          guests: [
+            { name: "haos", kind: "VM", on: true },
+            { name: "docker", kind: "VM", on: true },
+            { name: "nginx", kind: "LXC", on: true },
+            { name: "win11", kind: "VM", on: false }
+          ]
+        }
+      },
+      {
+        id: "nas",
+        name: "nas",
+        role: "저장소",
+        on: true,
+        wol: { mode: "manual", mac: "02:00:00:00:00:30", broadcast: "192.168.0.255", port: 9 },
+        manageUrl: "https://nas.home:5001",
+        pve: null
+      },
+      {
+        id: "dns",
+        name: "dns",
+        role: "해석기",
+        on: true,
+        wol: { mode: "off" },
+        manageUrl: "https://dns.home/admin",
+        pve: null
+      }
+    ];
+    const state = {
+      view: "dashboard",
+      filter: "all",
+      wol: "uplus",
+      house: "우리집",
+      email: "demo@example.com",
+      threshold: 100,
+      channel: "#homelab",
+      down: 842.4,
+      up: 201.1,
+      dropped: false,
+      members: ["demo@example.com"],
+      servers: JSON.parse(JSON.stringify(sampleServers))
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    function wolLabel(server) {
+      if (server.wol.mode === "uplus") return "U+ 공유기";
+      if (server.wol.mode === "manual") return "수동 MAC";
+      return "WOL 없음";
+    }
+
+    function showToast(text) {
+      const el = $("toast");
+      el.textContent = text;
+      el.hidden = false;
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => { el.hidden = true; }, 2800);
+    }
+
+    function bars(target) {
+      target.replaceChildren();
+      historyMbps.forEach((value, index) => {
+        const sample = index === historyMbps.length - 1 && state.dropped ? state.down : value;
+        const bar = document.createElement("div");
+        bar.className = "bar" + (sample < state.threshold ? " low" : "");
+        bar.style.height = Math.max(8, Math.min(100, sample / 10)) + "%";
+        bar.title = sample + " Mbps";
+        target.appendChild(bar);
+      });
+    }
+
+    function serverRow(server, index, withDelete) {
+      const row = document.createElement("article");
+      row.className = "server";
+      const status = server.on ? "켜짐" : "꺼짐";
+      row.innerHTML = `
+        <div class="idx">${String(index + 1).padStart(2, "0")}</div>
+        <div>
+          <div class="name"></div>
+          <div class="role"></div>
+        </div>
+        <div><span class="badge ${server.on ? "on" : "off"}">${status}</span></div>
+        <div class="meta"></div>
+        <div class="actions"></div>
+      `;
+      row.querySelector(".name").textContent = server.name;
+      row.querySelector(".role").textContent = server.role || "역할 없음";
+      row.querySelector(".meta").textContent = wolLabel(server);
+      const actions = row.querySelector(".actions");
+      if (server.wol.mode !== "off") {
+        const wake = document.createElement("button");
+        wake.className = "text-btn live";
+        wake.type = "button";
+        wake.textContent = "깨우기";
+        wake.addEventListener("click", () => wakeServer(server));
+        actions.appendChild(wake);
+      }
+      const manage = document.createElement("button");
+      manage.className = "text-btn";
+      manage.type = "button";
+      manage.textContent = "관리 페이지";
+      manage.disabled = !server.manageUrl;
+      manage.addEventListener("click", () => openManage(server));
+      actions.appendChild(manage);
+      if (withDelete) {
+        const remove = document.createElement("button");
+        remove.className = "text-btn";
+        remove.type = "button";
+        remove.textContent = "삭제";
+        remove.addEventListener("click", () => {
+          state.servers = state.servers.filter((item) => item.id !== server.id);
+          showToast(server.name + " 을 목록에서 뺐습니다.");
+          render();
+        });
+        actions.appendChild(remove);
+      }
+      return row;
+    }
+
+    function visibleServers() {
+      return state.servers.filter((server) => {
+        if (state.filter === "off") return !server.on;
+        if (state.filter === "pve") return Boolean(server.pve);
+        return true;
+      });
+    }
+
+    function renderServers(target, items, withDelete) {
+      target.replaceChildren();
+      if (!items.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "등록된 서버가 없습니다. 서버 추가로 집을 채우면 됩니다.";
+        target.appendChild(empty);
+        return;
+      }
+      items.forEach((server, index) => target.appendChild(serverRow(server, index, withDelete)));
+    }
+
+    function renderPve() {
+      const host = $("dash-pve");
+      host.replaceChildren();
+      const nodes = state.servers.filter((server) => server.pve);
+      if (!nodes.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "연동된 Proxmox 노드가 없습니다. 서버 추가에서 노드로 연결할 수 있습니다.";
+        host.appendChild(empty);
+        return;
+      }
+      nodes.forEach((server) => {
+        const card = document.createElement("article");
+        card.className = "card";
+        const running = server.pve.guests.filter((guest) => guest.on).length;
+        const title = document.createElement("div");
+        title.className = "section-head";
+        title.innerHTML = `<h2></h2>`;
+        title.querySelector("h2").textContent = server.pve.node;
+        const go = document.createElement("button");
+        go.className = "text-btn";
+        go.type = "button";
+        go.textContent = "노드 콘솔로 이동";
+        go.addEventListener("click", () => openManage(server));
+        title.appendChild(go);
+        card.appendChild(title);
+        const meta = document.createElement("p");
+        meta.className = "sub";
+        meta.textContent = `게스트 ${running}개 실행 · ${server.pve.guests.length - running}개 중지 · 토큰 ${server.pve.tokenId}`;
+        card.appendChild(meta);
+        const grid = document.createElement("div");
+        grid.className = "guests";
+        server.pve.guests.forEach((guest) => {
+          const cell = document.createElement("div");
+          cell.className = "guest";
+          cell.innerHTML = `<b></b><span class="meta"></span>`;
+          cell.querySelector("b").textContent = guest.name;
+          cell.querySelector("span").textContent = `${guest.kind} · ${guest.on ? "실행" : "중지"}`;
+          grid.appendChild(cell);
+        });
+        card.appendChild(grid);
+        host.appendChild(card);
+      });
+    }
+
+    function renderAlert() {
+      const text = state.dropped
+        ? `다운로드 ${state.down.toFixed(1)} Mbps가 임계값 ${state.threshold} Mbps보다 낮습니다. ${state.channel} 로 Slack 알림을 보냈습니다.`
+        : "";
+      ["dash-alert", "speed-alert"].forEach((id) => {
+        const el = $(id);
+        el.hidden = !state.dropped;
+        el.textContent = text;
+      });
+      $("dash-threshold").textContent = state.dropped
+        ? `임계값 ${state.threshold} Mbps · 저하`
+        : `임계값 ${state.threshold} Mbps · 정상`;
+    }
+
+    function render() {
+      $("house-name").textContent = state.house;
+      $("dash-title").textContent = state.house;
+      $("house-input").value = state.house;
+      $("who").textContent = state.email;
+      $("dash-down").textContent = state.down.toFixed(1);
+      $("dash-up").textContent = state.up.toFixed(1);
+      $("speed-down").textContent = state.down.toFixed(1);
+      $("speed-up").textContent = state.up.toFixed(1);
+      $("threshold").value = state.threshold;
+      bars($("dash-bars"));
+      bars($("speed-bars"));
+      renderAlert();
+      renderServers($("dash-servers"), state.servers, false);
+      renderServers($("server-list"), visibleServers(), true);
+      renderPve();
+      const members = $("members");
+      members.replaceChildren();
+      state.members.forEach((email) => {
+        const row = document.createElement("div");
+        row.className = "member";
+        const name = document.createElement("span");
+        name.textContent = email;
+        row.appendChild(name);
+        if (email !== state.email) {
+          const remove = document.createElement("button");
+          remove.className = "text-btn";
+          remove.type = "button";
+          remove.textContent = "빼기";
+          remove.addEventListener("click", () => {
+            state.members = state.members.filter((item) => item !== email);
+            render();
+          });
+          row.appendChild(remove);
+        }
+        members.appendChild(row);
+      });
+      document.querySelectorAll(".nav-btn").forEach((button) => {
+        button.setAttribute("aria-current", button.dataset.view === state.view ? "page" : "false");
+      });
+      ["dashboard", "servers", "speed", "settings"].forEach((view) => {
+        $("view-" + view).hidden = state.view !== view;
+      });
+    }
+
+    function enterApp() {
+      $("auth").hidden = true;
+      $("app").hidden = false;
+      render();
+    }
+
+    function wakeServer(server) {
+      if (server.wol.mode === "uplus") {
+        showToast(`U+ 공유기 장치 “${server.wol.device}”로 ${server.name}에 Wake 신호를 보냈습니다.`);
+      } else {
+        showToast(`${server.wol.mac} 으로 매직 패킷을 보냈습니다. 포트 ${server.wol.port}.`);
+      }
+      server.on = true;
+      render();
+    }
+
+    function openManage(server) {
+      const url = server.manageUrl || (server.pve && server.pve.host) || "";
+      if (!url) {
+        showToast("관리 페이지 주소가 없습니다.");
+        return;
+      }
+      $("redir-url").textContent = url;
+      $("redirect-modal").hidden = false;
+    }
+
+    function setWol(mode) {
+      state.wol = mode;
+      document.querySelectorAll("#wol-choice button").forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.wol === mode));
+      });
+      $("wol-uplus").hidden = mode !== "uplus";
+      $("wol-manual").hidden = mode !== "manual";
+    }
+
+    function openServerModal() {
+      $("server-form").reset();
+      $("srv-bcast").value = "192.168.0.255";
+      $("srv-port").value = "9";
+      $("srv-error").textContent = "";
+      $("pve-fields").hidden = true;
+      setWol("uplus");
+      $("server-modal").hidden = false;
+      $("srv-name").focus();
+    }
+
+    $("tab-login").addEventListener("click", () => {
+      $("tab-login").setAttribute("aria-selected", "true");
+      $("tab-signup").setAttribute("aria-selected", "false");
+      $("panel-login").hidden = false;
+      $("panel-signup").hidden = true;
+      $("auth-title").textContent = "로그인";
+    });
+    $("tab-signup").addEventListener("click", () => {
+      $("tab-signup").setAttribute("aria-selected", "true");
+      $("tab-login").setAttribute("aria-selected", "false");
+      $("panel-signup").hidden = false;
+      $("panel-login").hidden = true;
+      $("auth-title").textContent = "계정 만들기";
+    });
+
+    $("panel-login").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const email = $("login-email").value.trim();
+      const password = $("login-password").value;
+      if (!email.includes("@") || password.length < 8) {
+        $("login-error").textContent = "이메일과 8자 이상 비밀번호를 입력해 주세요. 이 시안은 서버에 로그인하지 않습니다.";
+        return;
+      }
+      state.email = email;
+      if (!state.members.includes(email)) state.members.unshift(email);
+      enterApp();
+    });
+
+    $("panel-signup").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const email = $("signup-email").value.trim();
+      const password = $("signup-password").value;
+      const house = $("signup-house").value.trim();
+      if (!email.includes("@") || password.length < 8 || !house) {
+        $("signup-error").textContent = "이메일, 8자 이상 비밀번호, 집 이름이 필요합니다.";
+        return;
+      }
+      state.email = email;
+      state.house = house;
+      state.members = [email];
+      state.servers = [];
+      enterApp();
+      showToast(house + " 을 만들었습니다. 서버는 비어 있습니다.");
+    });
+
+    $("demo-enter").addEventListener("click", () => {
+      state.email = "demo@example.com";
+      state.house = "우리집";
+      state.members = ["demo@example.com"];
+      state.servers = JSON.parse(JSON.stringify(sampleServers));
+      state.down = 842.4;
+      state.up = 201.1;
+      state.dropped = false;
+      state.view = "dashboard";
+      enterApp();
+    });
+
+    $("logout").addEventListener("click", () => {
+      $("app").hidden = true;
+      $("auth").hidden = false;
+    });
+
+    document.querySelectorAll(".nav-btn").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.view = button.dataset.view;
+        render();
+      });
+    });
+
+    document.querySelectorAll("[data-filter]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.filter = button.dataset.filter;
+        document.querySelectorAll("[data-filter]").forEach((item) => {
+          item.setAttribute("aria-selected", String(item === button));
+        });
+        render();
+      });
+    });
+
+    $("add-from-dash").addEventListener("click", openServerModal);
+    $("add-from-list").addEventListener("click", openServerModal);
+    $("close-server").addEventListener("click", () => { $("server-modal").hidden = true; });
+    $("close-redir").addEventListener("click", () => { $("redirect-modal").hidden = true; });
+
+    document.querySelectorAll("#wol-choice button").forEach((button) => {
+      button.addEventListener("click", () => setWol(button.dataset.wol));
+    });
+    $("srv-pve").addEventListener("change", () => {
+      $("pve-fields").hidden = !$("srv-pve").checked;
+    });
+
+    $("server-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const name = $("srv-name").value.trim();
+      const secret = $("srv-pve-secret").value;
+      if (!name) {
+        $("srv-error").textContent = "이름이 필요합니다.";
+        return;
+      }
+      if (state.wol === "manual" && !/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/.test($("srv-mac").value.trim())) {
+        $("srv-error").textContent = "수동 등록에는 MAC 주소가 필요합니다. 예: 02:00:00:00:00:10";
+        return;
+      }
+      if (state.wol === "uplus" && !$("srv-uplus").value.trim()) {
+        $("srv-error").textContent = "U+ 공유기에 등록된 장치 이름이 필요합니다.";
+        return;
+      }
+      if ($("srv-pve").checked && (!$("srv-pve-host").value.trim() || !$("srv-pve-node").value.trim())) {
+        $("srv-error").textContent = "Proxmox 연동에는 API 주소와 노드 이름이 필요합니다.";
+        return;
+      }
+      const server = {
+        id: "s" + Date.now(),
+        name,
+        role: $("srv-role").value.trim() || "직접 등록",
+        on: false,
+        wol: state.wol === "uplus"
+          ? { mode: "uplus", device: $("srv-uplus").value.trim() }
+          : state.wol === "manual"
+            ? { mode: "manual", mac: $("srv-mac").value.trim(), broadcast: $("srv-bcast").value.trim(), port: Number($("srv-port").value) }
+            : { mode: "off" },
+        manageUrl: $("srv-url").value.trim(),
+        pve: $("srv-pve").checked
+          ? {
+              host: $("srv-pve-host").value.trim(),
+              node: $("srv-pve-node").value.trim(),
+              tokenId: $("srv-pve-token").value.trim() || "token-id",
+              guests: []
+            }
+          : null
+      };
+      state.servers.push(server);
+      $("server-modal").hidden = true;
+      $("srv-pve-secret").value = "";
+      showToast(secret
+        ? server.name + " 을 추가했습니다. 토큰 비밀은 화면과 저장소에 남기지 않았습니다."
+        : server.name + " 을 추가했습니다.");
+      render();
+    });
+
+    $("threshold").addEventListener("input", () => {
+      const value = Number($("threshold").value);
+      if (!Number.isFinite(value) || value <= 0) return;
+      state.threshold = value;
+      state.dropped = state.down < state.threshold;
+      render();
+    });
+    $("slack-channel").addEventListener("input", () => {
+      state.channel = $("slack-channel").value.trim() || "#homelab";
+      renderAlert();
+    });
+    $("simulate-drop").addEventListener("click", () => {
+      state.down = 47.2;
+      state.dropped = true;
+      showToast(state.channel + " 으로 속도 저하 알림을 보냈습니다.");
+      render();
+    });
+    $("simulate-ok").addEventListener("click", () => {
+      state.down = 842.4;
+      state.up = 201.1;
+      state.dropped = false;
+      render();
+    });
+    $("house-input").addEventListener("input", () => {
+      state.house = $("house-input").value.trim() || "이름 없는 집";
+      $("house-name").textContent = state.house;
+      const dashTitle = $("dash-title");
+      if (dashTitle) dashTitle.textContent = state.house;
+    });
+    $("invite-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const email = $("invite-email").value.trim();
+      if (!email.includes("@")) return;
+      if (!state.members.includes(email)) state.members.push(email);
+      $("invite-email").value = "";
+      showToast(email + " 을 집에 초대했습니다.");
+      render();
+    });
+    $("refresh").addEventListener("click", () => {
+      showToast("샘플 상태를 다시 그렸습니다. 아직 실측은 없습니다.");
+      render();
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        $("server-modal").hidden = true;
+        $("redirect-modal").hidden = true;
+      }
+    });
+
+    const params = new URLSearchParams(location.search);
+    if (params.has("demo")) {
+      $("demo-enter").click();
+      const view = params.get("view");
+      if (view && ["dashboard", "servers", "speed", "settings"].includes(view)) {
+        state.view = view;
+        render();
+      }
+    }
+  </script>
+</body>
+</html>
