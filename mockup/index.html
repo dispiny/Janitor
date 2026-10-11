@@ -188,27 +188,36 @@
       margin: 28px 0 0;
     }
     .section-head h2 { font-size: 20px; font-weight: 500; }
-    .list { border-top: 1px solid var(--line); margin-top: 12px; }
-    .server {
+    .list, .svc-grid {
       display: grid;
-      grid-template-columns: 1.4fr 90px 120px auto;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 12px;
-      align-items: center;
-      padding: 18px 0;
-      border-bottom: 1px solid var(--line);
-      background: #fff;
+      margin-top: 16px;
     }
+    .server, .svc, .guest, .pve-card {
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: #fff;
+      padding: 18px;
+    }
+    .server, .svc { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+    .svc.down { border-color: #e4c4bf; }
+    .svc .url { word-break: break-all; }
+    .card-top, .server-top, .guest-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; width: 100%; }
+    .guest.down { border-color: #e4c4bf; }
     .idx { display: none; }
-    .server .name { font-size: 16px; font-weight: 500; }
+    .server .name, .svc .name { font-size: 16px; font-weight: 500; }
     .server .role, .meta { color: var(--muted); font-size: 13px; }
-    .badge { font-size: 14px; color: var(--muted); }
+    .badge { font-size: 14px; color: var(--muted); white-space: nowrap; }
     .badge.on { color: var(--text); }
-    .badge.off { color: var(--muted); }
-    .actions { display: flex; gap: 16px; justify-content: flex-end; }
+    .badge.off { color: var(--danger); }
+    .actions { display: flex; gap: 16px; justify-content: flex-start; flex-wrap: wrap; margin-top: 4px; }
+    .dot.off { background: var(--danger); }
 
+    .pve-card { margin-top: 12px; }
     .guests { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 16px; }
-    .guest { background: var(--wash); border-radius: 4px; padding: 14px; }
     .guest b { display: block; font-weight: 500; }
+    .guest .health { display: block; margin-top: 8px; }
     .filters { display: flex; gap: 22px; border-bottom: 1px solid var(--line); }
 
     .banner {
@@ -295,15 +304,15 @@
       box-shadow: 0 8px 24px rgba(23, 26, 32, 0.08);
     }
     .empty {
-      border-top: 1px solid var(--line);
-      padding: 28px 0;
+      grid-column: 1 / -1;
+      padding: 8px 0 20px;
       color: var(--muted);
     }
 
     @media (max-width: 900px) {
       .auth-bar, .top { height: auto; flex-wrap: wrap; padding: 12px 16px; gap: 8px; }
       nav { order: 3; width: 100%; gap: 16px; overflow-x: auto; }
-      .metrics, .split, .server, .guests { grid-template-columns: 1fr; }
+      .metrics, .split, .list, .svc-grid, .guests { grid-template-columns: 1fr; }
       .main { width: min(100% - 32px, 1080px); padding-top: 28px; }
       .page-head h1, .auth-card h1, .modal h2 { font-size: 30px; }
       .actions { justify-content: flex-start; }
@@ -357,6 +366,7 @@
       <nav>
         <button class="nav-btn" type="button" data-view="dashboard" aria-current="page">현황</button>
         <button class="nav-btn" type="button" data-view="servers">서버</button>
+        <button class="nav-btn" type="button" data-view="services">서비스</button>
         <button class="nav-btn" type="button" data-view="speed">속도</button>
         <button class="nav-btn" type="button" data-view="settings">설정</button>
       </nav>
@@ -371,7 +381,7 @@
         <div class="page-head">
           <div>
             <h1 id="dash-title">우리집</h1>
-            <p class="lede">회선, 속도, 서버, Proxmox를 한 화면에서 봅니다.</p>
+            <p class="lede">회선, 서버, 직접 띄운 서비스의 헬스 체크를 한 화면에서 봅니다.</p>
           </div>
           <button class="ghost" id="refresh" type="button">상태 다시 읽기</button>
         </div>
@@ -398,6 +408,12 @@
         </div>
         <div class="list" id="dash-servers"></div>
         <div class="section-head">
+          <h2>서비스</h2>
+          <button class="primary" id="add-svc-dash" type="button">서비스 추가</button>
+        </div>
+        <div class="banner" id="health-alert" hidden></div>
+        <div class="svc-grid" id="dash-services"></div>
+        <div class="section-head">
           <h2>Proxmox</h2>
         </div>
         <div id="dash-pve"></div>
@@ -416,7 +432,22 @@
           <button class="tab" type="button" data-filter="off">꺼짐</button>
           <button class="tab" type="button" data-filter="pve">Proxmox</button>
         </div>
-        <div class="list" id="server-list" style="margin-top:12px"></div>
+        <div class="list" id="server-list"></div>
+      </section>
+
+      <section id="view-services" hidden>
+        <div class="page-head">
+          <div>
+            <h1>서비스</h1>
+            <p class="lede">직접 운영하는 서비스마다 헬스 체크 주소를 두고, 기대한 응답이 아니면 Slack으로 알립니다.</p>
+          </div>
+          <button class="primary" id="add-svc-list" type="button">서비스 추가</button>
+        </div>
+        <div class="banner" id="health-alert-page" hidden></div>
+        <div class="row-actions" style="margin-bottom:8px">
+          <button class="ghost" id="check-all" type="button">전체 확인</button>
+        </div>
+        <div class="svc-grid" id="service-list"></div>
       </section>
 
       <section id="view-speed" hidden>
@@ -542,6 +573,25 @@
     </div>
   </div>
 
+  <div class="overlay" id="svc-modal" hidden>
+    <form class="modal" id="svc-form" role="dialog" aria-labelledby="svc-title">
+      <h2 id="svc-title">서비스 추가</h2>
+      <p class="lede">헬스 체크는 주소와 기대 상태 코드만 저장합니다. 인증 비밀은 환경 변수로 둡니다.</p>
+      <label class="field" style="margin-top:14px"><span>이름</span><input id="svc-name" required placeholder="Home Assistant"></label>
+      <label class="field"><span>돌아가는 곳</span><input id="svc-host" placeholder="haos, nas, dns…"></label>
+      <label class="field"><span>헬스 체크 URL</span><input id="svc-url" type="url" required placeholder="https://ha.home/api/"></label>
+      <label class="field"><span>기대 HTTP 상태</span><input id="svc-expect" type="number" min="100" max="599" value="200"></label>
+      <label class="field"><span>관리 페이지 URL</span><input id="svc-manage" type="url" placeholder="https://ha.home"></label>
+      <label class="check"><input id="svc-slack" type="checkbox" checked> 실패하면 Slack으로 알림</label>
+      <p class="hint">호출에 필요한 토큰이 있으면 <span class="env">HEALTHCHECK_TOKEN</span> 환경 변수만 읽습니다. 이 화면에는 값을 남기지 않습니다.</p>
+      <p class="error" id="svc-error"></p>
+      <div class="modal-actions">
+        <button class="ghost" id="close-svc" type="button">취소</button>
+        <button class="primary" type="submit">추가</button>
+      </div>
+    </form>
+  </div>
+
   <div class="toast" id="toast" hidden></div>
 
   <script>
@@ -594,6 +644,12 @@
         pve: null
       }
     ];
+    const sampleServices = [
+      { id: "ha", name: "Home Assistant", host: "haos", url: "https://ha.home/api/", expect: 200, manageUrl: "https://ha.home", slack: true, ok: true, code: 200, ms: 42 },
+      { id: "proxy", name: "nginx", host: "nginx", url: "https://home.example/healthz", expect: 200, manageUrl: "https://home.example", slack: true, ok: true, code: 200, ms: 18 },
+      { id: "nasui", name: "NAS", host: "nas", url: "https://nas.home:5001/webman/ping.cgi", expect: 200, manageUrl: "https://nas.home:5001", slack: true, ok: false, code: 0, ms: 0 },
+      { id: "dnsui", name: "DNS 관리", host: "dns", url: "https://dns.home/admin/api/health", expect: 200, manageUrl: "https://dns.home/admin", slack: true, ok: true, code: 200, ms: 11 }
+    ];
     const state = {
       view: "dashboard",
       filter: "all",
@@ -606,7 +662,8 @@
       up: 201.1,
       dropped: false,
       members: ["demo@example.com"],
-      servers: JSON.parse(JSON.stringify(sampleServers))
+      servers: JSON.parse(JSON.stringify(sampleServers)),
+      services: JSON.parse(JSON.stringify(sampleServices))
     };
 
     const $ = (id) => document.getElementById(id);
@@ -642,12 +699,14 @@
       row.className = "server";
       const status = server.on ? "켜짐" : "꺼짐";
       row.innerHTML = `
-        <div class="idx">${String(index + 1).padStart(2, "0")}</div>
-        <div>
-          <div class="name"></div>
-          <div class="role"></div>
+        <div class="server-top">
+          <div>
+            <div class="idx">${String(index + 1).padStart(2, "0")}</div>
+            <div class="name"></div>
+            <div class="role"></div>
+          </div>
+          <span class="badge ${server.on ? "on" : "off"}">${status}</span>
         </div>
-        <div><span class="badge ${server.on ? "on" : "off"}">${status}</span></div>
         <div class="meta"></div>
         <div class="actions"></div>
       `;
@@ -718,7 +777,7 @@
       }
       nodes.forEach((server) => {
         const card = document.createElement("article");
-        card.className = "card";
+        card.className = "pve-card";
         const running = server.pve.guests.filter((guest) => guest.on).length;
         const title = document.createElement("div");
         title.className = "section-head";
@@ -740,14 +799,128 @@
         server.pve.guests.forEach((guest) => {
           const cell = document.createElement("div");
           cell.className = "guest";
-          cell.innerHTML = `<b></b><span class="meta"></span>`;
+          const linked = state.services.find((service) => service.host === guest.name);
+          cell.innerHTML = `<div class="guest-top"><b></b><span class="badge"></span></div><span class="meta kind"></span><span class="meta health"></span>`;
           cell.querySelector("b").textContent = guest.name;
-          cell.querySelector("span").textContent = `${guest.kind} · ${guest.on ? "실행" : "중지"}`;
+          const badge = cell.querySelector(".badge");
+          badge.textContent = guest.on ? "실행" : "중지";
+          badge.classList.add(guest.on ? "on" : "off");
+          cell.querySelector(".kind").textContent = guest.kind;
+          const health = cell.querySelector(".health");
+          if (!linked) {
+            health.textContent = "헬스 체크 없음";
+          } else if (linked.ok) {
+            health.textContent = `헬스 ${linked.code} · ${linked.ms} ms`;
+          } else {
+            health.textContent = "헬스 실패";
+            cell.classList.add("down");
+          }
           grid.appendChild(cell);
         });
         card.appendChild(grid);
         host.appendChild(card);
       });
+    }
+
+    function healthSummary() {
+      const down = state.services.filter((service) => !service.ok);
+      if (!down.length) return "";
+      const names = down.map((service) => service.name).join(", ");
+      return `${names} 헬스 체크가 기대 응답이 아닙니다. ${state.channel} 로 Slack 알림을 보냈습니다.`;
+    }
+
+    function renderServices(target, withDelete) {
+      target.replaceChildren();
+      if (!state.services.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "등록된 서비스가 없습니다. 헬스 체크 주소를 추가하면 됩니다.";
+        target.appendChild(empty);
+        return;
+      }
+      state.services.forEach((service) => target.appendChild(serviceCard(service, withDelete)));
+    }
+
+    function serviceCard(service, withDelete) {
+      const card = document.createElement("article");
+      card.className = "svc" + (service.ok ? "" : " down");
+      card.innerHTML = `
+        <div class="card-top">
+          <div>
+            <div class="name"></div>
+            <div class="role"></div>
+          </div>
+          <span class="badge ${service.ok ? "on" : "off"}"></span>
+        </div>
+        <div class="meta url"></div>
+        <div class="meta result"></div>
+        <div class="actions"></div>
+      `;
+      card.querySelector(".name").textContent = service.name;
+      card.querySelector(".role").textContent = service.host || "호스트 없음";
+      card.querySelector(".badge").textContent = service.ok ? "정상" : "실패";
+      card.querySelector(".url").textContent = service.url;
+      card.querySelector(".result").textContent = service.ok
+        ? `${service.code} · ${service.ms} ms · 기대 ${service.expect}`
+        : `응답 없음 · 기대 ${service.expect}`;
+      const actions = card.querySelector(".actions");
+      const check = document.createElement("button");
+      check.className = "text-btn";
+      check.type = "button";
+      check.textContent = "다시 확인";
+      check.addEventListener("click", () => checkService(service, true));
+      actions.appendChild(check);
+      if (service.manageUrl) {
+        const manage = document.createElement("button");
+        manage.className = "text-btn";
+        manage.type = "button";
+        manage.textContent = "관리 페이지";
+        manage.addEventListener("click", () => {
+          $("redir-url").textContent = service.manageUrl;
+          $("redirect-modal").hidden = false;
+        });
+        actions.appendChild(manage);
+      }
+      if (!service.ok) {
+        const recover = document.createElement("button");
+        recover.className = "text-btn";
+        recover.type = "button";
+        recover.textContent = "복구로 표시";
+        recover.addEventListener("click", () => {
+          service.ok = true;
+          service.code = service.expect;
+          service.ms = 20 + Math.floor(Math.random() * 40);
+          showToast(service.name + " 헬스 체크가 회복됐습니다.");
+          render();
+        });
+        actions.appendChild(recover);
+      }
+      if (withDelete) {
+        const remove = document.createElement("button");
+        remove.className = "text-btn";
+        remove.type = "button";
+        remove.textContent = "삭제";
+        remove.addEventListener("click", () => {
+          state.services = state.services.filter((item) => item.id !== service.id);
+          showToast(service.name + " 헬스 체크를 뺐습니다.");
+          render();
+        });
+        actions.appendChild(remove);
+      }
+      return card;
+    }
+
+    function checkService(service, announce) {
+      if (service.ok) {
+        service.ms = 8 + Math.floor(Math.random() * 50);
+        service.code = service.expect;
+      }
+      if (announce) {
+        showToast(service.ok
+          ? `${service.name} ${service.code} · ${service.ms} ms`
+          : `${service.name} 헬스 체크 실패. ${service.slack ? state.channel + " 으로 알림을 보냈습니다." : "Slack 알림은 꺼져 있습니다."}`);
+      }
+      render();
     }
 
     function renderAlert() {
@@ -762,6 +935,12 @@
       $("dash-threshold").textContent = state.dropped
         ? `임계값 ${state.threshold} Mbps · 저하`
         : `임계값 ${state.threshold} Mbps · 정상`;
+      const health = healthSummary();
+      ["health-alert", "health-alert-page"].forEach((id) => {
+        const el = $(id);
+        el.hidden = !health;
+        el.textContent = health;
+      });
     }
 
     function render() {
@@ -779,6 +958,8 @@
       renderAlert();
       renderServers($("dash-servers"), state.servers, false);
       renderServers($("server-list"), visibleServers(), true);
+      renderServices($("dash-services"), false);
+      renderServices($("service-list"), true);
       renderPve();
       const members = $("members");
       members.replaceChildren();
@@ -804,7 +985,7 @@
       document.querySelectorAll(".nav-btn").forEach((button) => {
         button.setAttribute("aria-current", button.dataset.view === state.view ? "page" : "false");
       });
-      ["dashboard", "servers", "speed", "settings"].forEach((view) => {
+      ["dashboard", "servers", "services", "speed", "settings"].forEach((view) => {
         $("view-" + view).hidden = state.view !== view;
       });
     }
@@ -896,6 +1077,7 @@
       state.house = house;
       state.members = [email];
       state.servers = [];
+      state.services = [];
       enterApp();
       showToast(house + " 을 만들었습니다. 서버는 비어 있습니다.");
     });
@@ -905,6 +1087,7 @@
       state.house = "우리집";
       state.members = ["demo@example.com"];
       state.servers = JSON.parse(JSON.stringify(sampleServers));
+      state.services = JSON.parse(JSON.stringify(sampleServices));
       state.down = 842.4;
       state.up = 201.1;
       state.dropped = false;
@@ -1034,13 +1217,62 @@
       render();
     });
     $("refresh").addEventListener("click", () => {
-      showToast("샘플 상태를 다시 그렸습니다. 아직 실측은 없습니다.");
+      state.services.forEach((service) => checkService(service, false));
+      const down = state.services.filter((service) => !service.ok);
+      showToast(down.length
+        ? "헬스 체크를 다시 읽었습니다. 실패한 서비스가 있습니다."
+        : "헬스 체크를 다시 읽었습니다.");
+    });
+
+    function openServiceModal() {
+      $("svc-form").reset();
+      $("svc-expect").value = "200";
+      $("svc-slack").checked = true;
+      $("svc-error").textContent = "";
+      $("svc-modal").hidden = false;
+      $("svc-name").focus();
+    }
+    $("add-svc-dash").addEventListener("click", openServiceModal);
+    $("add-svc-list").addEventListener("click", openServiceModal);
+    $("close-svc").addEventListener("click", () => { $("svc-modal").hidden = true; });
+    $("check-all").addEventListener("click", () => {
+      state.services.forEach((service) => checkService(service, false));
+      const down = state.services.filter((service) => !service.ok && service.slack);
+      showToast(down.length
+        ? down.map((service) => service.name).join(", ") + " 실패를 " + state.channel + " 으로 알렸습니다."
+        : "등록된 서비스가 모두 기대한 응답입니다.");
+    });
+    $("svc-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const name = $("svc-name").value.trim();
+      const url = $("svc-url").value.trim();
+      const expect = Number($("svc-expect").value);
+      if (!name || !/^https?:\/\//.test(url) || !Number.isInteger(expect)) {
+        $("svc-error").textContent = "이름, http(s) 헬스 체크 주소, 기대 상태 코드가 필요합니다.";
+        return;
+      }
+      state.services.push({
+        id: "svc" + Date.now(),
+        name,
+        host: $("svc-host").value.trim(),
+        url,
+        expect,
+        manageUrl: $("svc-manage").value.trim(),
+        slack: $("svc-slack").checked,
+        ok: true,
+        code: expect,
+        ms: 24
+      });
+      $("svc-modal").hidden = true;
+      showToast(name + " 헬스 체크를 추가했습니다. 주소만 저장하고 비밀은 남기지 않습니다.");
+      state.view = "services";
       render();
     });
 
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
         $("server-modal").hidden = true;
+        $("svc-modal").hidden = true;
         $("redirect-modal").hidden = true;
       }
     });
@@ -1049,7 +1281,7 @@
     if (params.has("demo")) {
       $("demo-enter").click();
       const view = params.get("view");
-      if (view && ["dashboard", "servers", "speed", "settings"].includes(view)) {
+      if (view && ["dashboard", "servers", "services", "speed", "settings"].includes(view)) {
         state.view = view;
         render();
       }
