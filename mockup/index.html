@@ -184,9 +184,14 @@
 
     .metrics {
       display: grid;
-      grid-template-columns: 0.7fr 1.3fr;
+      grid-template-columns: 1fr 1fr 1.2fr;
       gap: 12px;
       margin-bottom: 8px;
+    }
+    .status-line.mono {
+      font-family: var(--mono);
+      font-size: 22px;
+      letter-spacing: -0.02em;
     }
     .card {
       background: var(--surface);
@@ -472,6 +477,11 @@
             <p class="sub">지연 12 ms · U+ 광랜 · 게이트웨이 응답</p>
           </article>
           <article class="card">
+            <div class="card-label">공인 IP</div>
+            <div class="status-line mono" id="public-ip">203.0.113.42</div>
+            <p class="sub" id="public-ip-meta">IPv4 · 집 에이전트가 확인 · 약 1분 전</p>
+          </article>
+          <article class="card">
             <div class="card-label">속도</div>
             <div class="speeds">
               <div><span>다운로드</span><b id="dash-down">842.4</b></div>
@@ -592,11 +602,13 @@
             <div class="card-label">연동</div>
             <div class="rule"><span>Supabase</span><span class="meta">계정, 집, 서버 목록</span></div>
             <div class="env">SUPABASE_URL<br>SUPABASE_ANON_KEY</div>
+            <div class="rule"><span>집 에이전트</span><span class="meta" id="agent-status">cloudflared와 같은 항상 켜진 1대</span></div>
+            <div class="env">AGENT_TOKEN<br>CF_TUNNEL_HOSTNAME</div>
             <div class="rule"><span>U+ 공유기 WOL</span><span class="meta">등록 장치로 깨우기</span></div>
             <div class="env">UPLUS_ROUTER_URL<br>UPLUS_ROUTER_PASSWORD</div>
             <div class="rule"><span>Proxmox API</span><span class="meta">토큰 비밀은 서버에만</span></div>
             <div class="env">PVE_TOKEN_SECRET</div>
-            <p class="hint">service role 키, 웹훅, 공유기 비밀번호, Proxmox 토큰 비밀은 클라이언트와 git에 두지 않습니다. anon key는 RLS 뒤에서만 씁니다.</p>
+            <p class="hint">에이전트는 깨울 서버마다 깔 필요 없습니다. Cloudflare Tunnel이 있는 항상 켜진 기기에만 두면 WOL, 공인 IP, 헬스 체크를 대신합니다. 비밀값은 git에 두지 않습니다.</p>
           </article>
         </div>
       </section>
@@ -740,6 +752,9 @@
       down: 842.4,
       up: 201.1,
       dropped: false,
+      publicIp: "203.0.113.42",
+      publicIpChecked: "약 1분 전",
+      agentHost: "cloudflared와 같은 항상 켜진 1대",
       members: ["demo@example.com"],
       servers: JSON.parse(JSON.stringify(sampleServers)),
       services: JSON.parse(JSON.stringify(sampleServices))
@@ -1029,6 +1044,9 @@
       $("who").textContent = state.email;
       $("dash-down").textContent = state.down.toFixed(1);
       $("dash-up").textContent = state.up.toFixed(1);
+      $("public-ip").textContent = state.publicIp;
+      $("public-ip-meta").textContent = `IPv4 · 집 에이전트가 확인 · ${state.publicIpChecked}`;
+      if ($("agent-status")) $("agent-status").textContent = state.agentHost;
       $("speed-down").textContent = state.down.toFixed(1);
       $("speed-up").textContent = state.up.toFixed(1);
       $("threshold").value = state.threshold;
@@ -1170,6 +1188,8 @@
       state.down = 842.4;
       state.up = 201.1;
       state.dropped = false;
+      state.publicIp = "203.0.113.42";
+      state.publicIpChecked = "약 1분 전";
       state.view = "dashboard";
       enterApp();
     });
@@ -1297,10 +1317,12 @@
     });
     $("refresh").addEventListener("click", () => {
       state.services.forEach((service) => checkService(service, false));
+      state.publicIpChecked = "방금";
       const down = state.services.filter((service) => !service.ok);
       showToast(down.length
-        ? "헬스 체크를 다시 읽었습니다. 실패한 서비스가 있습니다."
-        : "헬스 체크를 다시 읽었습니다.");
+        ? "공인 IP와 헬스 체크를 다시 읽었습니다. 실패한 서비스가 있습니다."
+        : "공인 IP와 헬스 체크를 다시 읽었습니다.");
+      render();
     });
 
     function openServiceModal() {
