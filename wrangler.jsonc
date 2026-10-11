@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "janitor",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-11",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "observability": {
+    "enabled": true,
+    "traces": {
+      "enabled": true
+    }
+  },
+  "vars": {
+    "SUPABASE_URL": "https://ypklxfwpbyroxdolgiun.supabase.co",
+    "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlwa2x4ZndwYnlyb3hkb2xnaXVuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE3MzEyMjAsImV4cCI6MjEwNzMwNzIyMH0.exlBEfO-jJb9JY4fEFi-yqEtT_55DyPrBZnuI2-mQ7c"
+  }
+  // Optional secret: wrangler secret put SLACK_WEBHOOK_URL
+}

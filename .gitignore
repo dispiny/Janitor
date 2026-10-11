@@ -218,3 +218,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Janitor
+node_modules/
+.dev.vars
+.agent/.env
+agent/.env
+.wrangler/
+dist/

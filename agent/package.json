@@ -1,0 +1,13 @@
+{
+  "name": "janitor-agent",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "undici": "^7.16.0"
+  }
+}

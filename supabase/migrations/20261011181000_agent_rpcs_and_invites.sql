@@ -1,0 +1,5 @@
+-- Applied on Supabase project ypklxfwpbyroxdolgiun via MCP.
+-- Includes: house_invites, create_house, save_server_secret,
+-- agent_poll / agent_report (extensions.digest), claim_house_invites,
+-- volatile membership helpers, houses_delete policy, anon grant hardening.
+-- Source of truth is the remote schema; re-apply with supabase db pull if needed.

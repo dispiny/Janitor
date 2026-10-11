@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Janitor</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <section class="auth" id="auth">
+    <div class="auth-bar">
+      <div class="mark">JANITOR</div>
+      <div class="auth-note">라이트</div>
+    </div>
+    <div class="auth-main">
+      <div class="auth-card">
+      <div class="tabs" role="tablist">
+        <button class="tab" id="tab-login" type="button" role="tab" aria-selected="true" aria-controls="panel-login">로그인</button>
+        <button class="tab" id="tab-signup" type="button" role="tab" aria-selected="false" aria-controls="panel-signup">계정 만들기</button>
+      </div>
+      <h1 id="auth-title">로그인</h1>
+
+      <form id="panel-login" role="tabpanel">
+        <label class="field"><span>이메일</span><input id="login-email" type="email" autocomplete="username" placeholder="you@example.com" required></label>
+        <label class="field"><span>비밀번호</span><input id="login-password" type="password" autocomplete="current-password" placeholder="비밀번호" required></label>
+        <p class="error" id="login-error"></p>
+        <div class="stack">
+          <button class="primary" type="submit">로그인</button>
+        </div>
+        <p class="hint">Supabase Auth로 로그인합니다. 키·웹훅·공유기 비밀번호는 이 화면에 두지 않습니다.</p>
+      </form>
+
+      <form id="panel-signup" role="tabpanel" hidden>
+        <label class="field"><span>이메일</span><input id="signup-email" type="email" autocomplete="username" placeholder="you@example.com" required></label>
+        <label class="field"><span>비밀번호</span><input id="signup-password" type="password" autocomplete="new-password" minlength="8" placeholder="8자 이상" required></label>
+        <label class="field"><span>집 이름</span><input id="signup-house" type="text" placeholder="우리집" required></label>
+        <p class="error" id="signup-error"></p>
+        <button class="primary" type="submit">집과 계정 만들기</button>
+        <p class="hint">집은 계정마다 따로 생깁니다. 서버와 멤버는 만든 뒤에 추가합니다. 샘플 데이터는 넣지 않습니다.</p>
+      </form>
+      </div>
+    </div>
+  </section>
+
+  <div class="shell" id="app" hidden>
+    <header class="top">
+      <div class="brand">
+        <div class="mark">JANITOR</div>
+        <div class="house" id="house-name">—</div>
+      </div>
+      <nav>
+        <button class="nav-btn" type="button" data-view="dashboard" aria-current="page">현황</button>
+        <button class="nav-btn" type="button" data-view="servers">서버</button>
+        <button class="nav-btn" type="button" data-view="services">서비스</button>
+        <button class="nav-btn" type="button" data-view="speed">속도</button>
+        <button class="nav-btn" type="button" data-view="settings">설정</button>
+      </nav>
+      <div class="account">
+        <div class="who" id="who"></div>
+        <button class="text-btn" id="logout" type="button">로그아웃</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <section id="view-dashboard">
+        <div class="page-head">
+          <div>
+            <h1 id="dash-title">—</h1>
+            <p class="lede">네트워크와 집 안 상태를 한눈에 보고, 깨우거나 관리 화면으로 넘어갑니다.</p>
+          </div>
+          <button class="ghost" id="refresh" type="button">상태 다시 읽기</button>
+        </div>
+        <div class="banner" id="dash-alert" hidden></div>
+        <div class="metrics">
+          <article class="card">
+            <div class="card-label">네트워크</div>
+            <div class="status-line"><span class="dot" id="net-dot"></span><span id="net-status">에이전트 대기</span></div>
+            <div class="kv">
+              <div class="kv-row"><span>공인 IP</span><b id="public-ip">—</b></div>
+              <div class="kv-row"><span>확인</span><b id="public-ip-meta">아직 없음</b></div>
+              <div class="kv-row"><span>에이전트</span><b id="agent-seen">미연결</b></div>
+            </div>
+          </article>
+          <article class="card">
+            <div class="card-label">속도</div>
+            <div class="speeds">
+              <div><span>다운로드</span><b id="dash-down">—</b></div>
+              <div><span>업로드</span><b id="dash-up">—</b></div>
+            </div>
+            <p class="sub" id="dash-threshold">측정 대기</p>
+            <div class="bars" id="dash-bars"></div>
+          </article>
+          <article class="card">
+            <div class="card-label">상태 요약</div>
+            <div class="stat-num" id="summary-servers">0<em>/0</em> 서버</div>
+            <p class="sub" id="summary-services">등록된 서비스 없음</p>
+            <div class="kv" style="margin-top:12px">
+              <div class="kv-row"><span>꺼진 서버</span><b id="summary-off">0</b></div>
+              <div class="kv-row"><span>헬스 실패</span><b id="summary-down">0</b></div>
+            </div>
+          </article>
+        </div>
+        <div class="section-head">
+          <h2>서버</h2>
+          <button class="primary" id="add-from-dash" type="button">서버 추가</button>
+        </div>
+        <div class="list" id="dash-servers"></div>
+        <div class="section-head">
+          <h2>서비스</h2>
+          <button class="ghost" type="button" id="goto-services">전체 보기</button>
+        </div>
+        <div class="banner" id="health-alert" hidden></div>
+        <div class="svc-grid" id="dash-services"></div>
+        <div class="section-head">
+          <h2>Proxmox</h2>
+        </div>
+        <div id="dash-pve"></div>
+      </section>
+
+      <section id="view-servers" hidden>
+        <div class="page-head">
+          <div>
+            <h1>서버</h1>
+            <p class="lede">대수는 고정이 아닙니다. 필요할 때 등록하고 지웁니다.</p>
+          </div>
+          <button class="primary" id="add-from-list" type="button">서버 추가</button>
+        </div>
+        <div class="filters" role="group" aria-label="서버 필터">
+          <button class="tab" type="button" data-filter="all" aria-selected="true">전체</button>
+          <button class="tab" type="button" data-filter="off">꺼짐</button>
+          <button class="tab" type="button" data-filter="pve">Proxmox</button>
+        </div>
+        <div class="list" id="server-list"></div>
+      </section>
+
+      <section id="view-services" hidden>
+        <div class="page-head">
+          <div>
+            <h1>서비스</h1>
+            <p class="lede">직접 운영하는 서비스마다 헬스 체크 주소를 두고, 기대한 응답이 아니면 Slack으로 알립니다.</p>
+          </div>
+          <button class="primary" id="add-svc-list" type="button">서비스 추가</button>
+        </div>
+        <div class="banner" id="health-alert-page" hidden></div>
+        <div class="row-actions" style="margin-bottom:8px">
+          <button class="ghost" id="check-all" type="button">전체 확인</button>
+        </div>
+        <div class="svc-grid" id="service-list"></div>
+      </section>
+
+      <section id="view-speed" hidden>
+        <div class="page-head">
+          <div>
+            <h1>인터넷 속도</h1>
+            <p class="lede">임계값 아래로 떨어지면 Slack으로 알립니다.</p>
+          </div>
+          <button class="ghost" id="probe-speed" type="button">측정 요청</button>
+        </div>
+        <div class="banner" id="speed-alert" hidden></div>
+        <div class="split">
+          <article class="card">
+            <div class="card-label">최근 측정</div>
+            <div class="speeds">
+              <div><span>다운로드</span><b id="speed-down">—</b></div>
+              <div><span>업로드</span><b id="speed-up">—</b></div>
+            </div>
+            <div class="bars" id="speed-bars"></div>
+            <p class="sub">홈 에이전트가 보고한 실제 측정만 표시합니다.</p>
+          </article>
+          <article class="card">
+            <div class="card-label">Slack 알림</div>
+            <label class="field" style="margin-top:12px">
+              <span>다운로드 임계값 (Mbps)</span>
+              <input id="threshold" type="number" min="1" max="10000" value="100">
+            </label>
+            <label class="field">
+              <span>채널 표시 이름</span>
+              <input id="slack-channel" type="text" value="#homelab">
+            </label>
+            <button class="primary" id="save-speed-settings" type="button">저장</button>
+            <p class="hint">웹훅 주소는 <span class="env">SLACK_WEBHOOK_URL</span> 시크릿으로만 둡니다. <span id="slack-status"></span></p>
+          </article>
+        </div>
+      </section>
+
+      <section id="view-settings" hidden>
+        <div class="page-head">
+          <div>
+            <h1>설정</h1>
+            <p class="lede">공개 저장소에 올라가면 안 되는 값은 이름만 보여 줍니다.</p>
+          </div>
+        </div>
+        <div class="split">
+          <article class="card">
+            <div class="card-label">집</div>
+            <label class="field" style="margin-top:12px">
+              <span>집 이름</span>
+              <input id="house-input" type="text" value="">
+            </label>
+            <button class="ghost" id="save-house" type="button">집 이름 저장</button>
+            <div class="label" style="margin-top:16px">멤버</div>
+            <div id="members"></div>
+            <form id="invite-form" class="row-actions" style="margin-top:10px">
+              <input id="invite-email" type="email" placeholder="invite@example.com" required>
+              <button class="primary" type="submit">초대</button>
+            </form>
+            <p class="hint">이미 가입한 이메일만 집으로 초대할 수 있습니다.</p>
+          </article>
+          <article class="card">
+            <div class="card-label">연동</div>
+            <div class="rule"><span>Supabase</span><span class="meta">계정, 집, 서버 목록</span></div>
+            <div class="env">SUPABASE_URL<br>SUPABASE_ANON_KEY</div>
+            <div class="rule"><span>집 에이전트</span><span class="meta" id="agent-status">미연결</span></div>
+            <label class="field" style="margin-top:12px">
+              <span>에이전트 URL (선택, Tunnel)</span>
+              <input id="agent-url" type="url" placeholder="https://janitor-agent.example.com">
+            </label>
+            <label class="field">
+              <span>에이전트 호스트 설명</span>
+              <input id="agent-host-label" type="text" placeholder="cloudflared와 같은 항상 켜진 1대">
+            </label>
+            <button class="primary" id="mint-agent-token" type="button">에이전트 토큰 발급</button>
+            <p class="hint" id="agent-token-hint">토큰은 한 번만 보여 줍니다. AGENT_TOKEN 환경 변수로 에이전트에 넣으세요.</p>
+            <div class="env" id="agent-token-box" hidden></div>
+            <div class="rule"><span>U+ 공유기 WOL</span><span class="meta">등록 장치로 깨우기</span></div>
+            <div class="env">UPLUS_ROUTER_URL<br>UPLUS_ROUTER_PASSWORD</div>
+            <div class="rule"><span>Proxmox API</span><span class="meta">토큰 비밀은 서버에만</span></div>
+            <div class="env">server_secrets (service role)</div>
+            <p class="hint">에이전트는 깨울 서버마다 깔 필요 없습니다. Cloudflare Tunnel이 있는 항상 켜진 기기에만 두면 WOL, 공인 IP, 헬스 체크를 대신합니다.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="overlay" id="server-modal" hidden>
+    <form class="modal" id="server-form" role="dialog" aria-labelledby="server-title">
+      <h2 id="server-title">서버 추가</h2>
+      <p class="lede">Wake 방식과 Proxmox 연동은 서버마다 고릅니다.</p>
+      <label class="field" style="margin-top:14px"><span>이름</span><input id="srv-name" required placeholder="작업 PC"></label>
+      <label class="field"><span>역할</span><input id="srv-role" placeholder="데스크톱, NAS, 노드…"></label>
+      <label class="field"><span>관리 페이지 URL</span><input id="srv-url" type="url" placeholder="https://pve.home:8006"></label>
+      <div class="label">Wake-on-LAN</div>
+      <div class="choice" id="wol-choice">
+        <button type="button" data-wol="off" aria-pressed="false">사용 안 함</button>
+        <button type="button" data-wol="uplus" aria-pressed="true">U+ 공유기</button>
+        <button type="button" data-wol="manual" aria-pressed="false">수동 등록</button>
+      </div>
+      <div id="wol-uplus">
+        <label class="field"><span>공유기에 등록된 장치 이름</span><input id="srv-uplus" placeholder="거실-PC"></label>
+        <p class="hint">공유기 비밀번호는 입력하지 않습니다. 에이전트가 UPLUS_ROUTER_PASSWORD를 읽습니다.</p>
+      </div>
+      <div id="wol-manual" hidden>
+        <label class="field"><span>MAC 주소</span><input id="srv-mac" placeholder="02:00:00:00:00:10" pattern="^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$"></label>
+        <label class="field"><span>브로드캐스트</span><input id="srv-bcast" value="192.168.0.255"></label>
+        <label class="field"><span>포트</span><input id="srv-port" type="number" value="9" min="1" max="65535"></label>
+      </div>
+      <label class="check"><input id="srv-pve" type="checkbox"> Proxmox 노드로 연동</label>
+      <div id="pve-fields" hidden>
+        <label class="field"><span>API 주소</span><input id="srv-pve-host" type="url" placeholder="https://pve.home:8006"></label>
+        <label class="field"><span>노드 이름</span><input id="srv-pve-node" placeholder="pve-node"></label>
+        <label class="field"><span>토큰 ID</span><input id="srv-pve-token" placeholder="janitor@pve!monitor"></label>
+        <label class="field"><span>토큰 비밀</span><input id="srv-pve-secret" type="password" placeholder="저장 후 다시 표시하지 않음" autocomplete="new-password"></label>
+        <p class="hint">비밀은 서버측 server_secrets에만 저장되며 화면으로 다시 내려오지 않습니다.</p>
+      </div>
+      <p class="error" id="srv-error"></p>
+      <div class="modal-actions">
+        <button class="ghost" id="close-server" type="button">취소</button>
+        <button class="primary" type="submit">추가</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="overlay" id="redirect-modal" hidden>
+    <div class="modal" role="dialog" aria-labelledby="redir-title">
+      <h2 id="redir-title">관리 페이지로 이동합니다</h2>
+      <p class="lede" id="redir-url" style="margin:12px 0;font-family:var(--mono);font-size:14px"></p>
+      <div class="modal-actions">
+        <button class="ghost" id="close-redir" type="button">취소</button>
+        <a class="primary" id="open-redir" href="#" target="_blank" rel="noopener">열기</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="svc-modal" hidden>
+    <form class="modal" id="svc-form" role="dialog" aria-labelledby="svc-title">
+      <h2 id="svc-title">서비스 추가</h2>
+      <p class="lede">헬스 체크는 주소와 기대 상태 코드만 저장합니다. 인증 비밀은 환경 변수로 둡니다.</p>
+      <label class="field" style="margin-top:14px"><span>이름</span><input id="svc-name" required placeholder="Home Assistant"></label>
+      <label class="field"><span>돌아가는 곳</span><input id="svc-host" placeholder="haos, nas, dns…"></label>
+      <label class="field"><span>헬스 체크 URL</span><input id="svc-url" type="url" required placeholder="https://ha.home/api/"></label>
+      <label class="field"><span>기대 HTTP 상태</span><input id="svc-expect" type="number" min="100" max="599" value="200"></label>
+      <label class="field"><span>관리 페이지 URL</span><input id="svc-manage" type="url" placeholder="https://ha.home"></label>
+      <label class="check"><input id="svc-slack" type="checkbox" checked> 실패하면 Slack으로 알림</label>
+      <p class="hint">호출에 필요한 토큰이 있으면 에이전트의 <span class="env">HEALTHCHECK_TOKEN</span>만 읽습니다.</p>
+      <p class="error" id="svc-error"></p>
+      <div class="modal-actions">
+        <button class="ghost" id="close-svc" type="button">취소</button>
+        <button class="primary" type="submit">추가</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

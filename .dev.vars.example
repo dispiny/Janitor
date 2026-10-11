@@ -1,0 +1,3 @@
+# Copy to .dev.vars for local `wrangler dev` (never commit real values)
+# Optional: Slack alerts when health/speed fails
+SLACK_WEBHOOK_URL=
