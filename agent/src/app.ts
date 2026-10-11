@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { bearerAuth } from "./auth.js";
 import type { AgentConfig } from "./config.js";
+import { isAgentError } from "./errors.js";
 import { checkHttp } from "./health-check.js";
 import { resolvePublicIp } from "./public-ip.js";
 import { sendMagicPacket } from "./wol/magic-packet.js";
@@ -11,6 +12,7 @@ const wakeSchema = z.discriminatedUnion("mode", [
   z.object({
     mode: z.literal("manual"),
     mac: z.string().regex(/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/),
+    // Default matches common U+ home LAN; override when the subnet differs.
     broadcast: z.string().min(1).default("192.168.0.255"),
     port: z.number().int().min(1).max(65535).default(9),
   }),
@@ -35,6 +37,7 @@ export type AppEnv = {
 
 export function createApp(config: AgentConfig) {
   const app = new Hono<AppEnv>();
+  const uplusReady = Boolean(config.uplusRouterUrl && config.uplusRouterPassword);
 
   app.use("*", async (c, next) => {
     c.set("config", config);
@@ -53,11 +56,10 @@ export function createApp(config: AgentConfig) {
       tunnelHostname: config.tunnelHostname ?? null,
       capabilities: {
         wakeManual: true,
-        wakeUplus: Boolean(config.uplusRouterUrl && config.uplusRouterPassword),
+        wakeUplus: uplusReady,
         publicIp: true,
         httpCheck: true,
       },
-      uplusConfigured: Boolean(config.uplusRouterUrl && config.uplusRouterPassword),
     });
   });
 
@@ -67,7 +69,10 @@ export function createApp(config: AgentConfig) {
       return c.json(result);
     } catch (error) {
       return c.json(
-        { error: error instanceof Error ? error.message : "public ip lookup failed" },
+        {
+          error: isAgentError(error) ? error.code.toLowerCase() : "public_ip_failed",
+          message: error instanceof Error ? error.message : "public ip lookup failed",
+        },
         502,
       );
     }
@@ -99,19 +104,24 @@ export function createApp(config: AgentConfig) {
       });
       return c.json(result);
     } catch (error) {
-      const code = (error as Error & { code?: string }).code;
-      if (code === "UPLUS_NOT_IMPLEMENTED") {
-        return c.json(
-          {
-            error: "uplus_not_implemented",
-            message: error instanceof Error ? error.message : "not implemented",
-          },
-          501,
-        );
+      if (isAgentError(error)) {
+        if (error.code === "UPLUS_NOT_IMPLEMENTED") {
+          return c.json(
+            { error: "uplus_not_implemented", message: error.message },
+            501,
+          );
+        }
+        if (
+          error.code === "UPLUS_NOT_CONFIGURED" ||
+          error.code === "UPLUS_DEVICE_REQUIRED"
+        ) {
+          return c.json({ error: error.code.toLowerCase(), message: error.message }, 400);
+        }
       }
-      const message = error instanceof Error ? error.message : "wake failed";
-      const status = message.includes("required") ? 400 : 500;
-      return c.json({ error: message }, status);
+      return c.json(
+        { error: error instanceof Error ? error.message : "wake failed" },
+        500,
+      );
     }
   });
 
@@ -142,7 +152,8 @@ export function createApp(config: AgentConfig) {
       timeoutMs: parsed.data.timeoutMs,
       authorization,
     });
-    return c.json(result, result.ok ? 200 : 200);
+    // Body still carries ok/status/ms; HTTP status lets Workers detect failure without parsing.
+    return c.json(result, result.ok ? 200 : 502);
   });
 
   return app;

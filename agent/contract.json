@@ -31,7 +31,8 @@
           "publicIp": "boolean",
           "httpCheck": "boolean"
         }
-      }
+      },
+      "notes": "wakeUplus is true only when UPLUS_ROUTER_* env is set"
     },
     {
       "method": "GET",
@@ -78,6 +79,10 @@
         "expectStatus": "number",
         "ms": "number",
         "error": "string?"
+      },
+      "httpStatus": {
+        "ok": 200,
+        "failed": 502
       }
     }
   ]

@@ -1,3 +1,5 @@
+import { AgentError } from "../errors.js";
+
 export type UplusWakeInput = {
   device: string;
   routerUrl?: string;
@@ -18,15 +20,16 @@ export type UplusWakeResult = {
  */
 export async function wakeViaUplus(input: UplusWakeInput): Promise<UplusWakeResult> {
   if (!input.routerUrl || !input.routerPassword) {
-    throw new Error("UPLUS_ROUTER_URL and UPLUS_ROUTER_PASSWORD are required for uplus WOL");
+    throw new AgentError(
+      "UPLUS_NOT_CONFIGURED",
+      "UPLUS_ROUTER_URL and UPLUS_ROUTER_PASSWORD are required for uplus WOL",
+    );
   }
   if (!input.device.trim()) {
-    throw new Error("device name is required");
+    throw new AgentError("UPLUS_DEVICE_REQUIRED", "device name is required");
   }
 
   // Intentionally not implemented against a live router in this scaffold.
   // Cloud Worker should treat HTTP 501 as "agent ready, provider pending".
-  const error = new Error("uplus WOL provider is not implemented yet");
-  (error as Error & { code?: string }).code = "UPLUS_NOT_IMPLEMENTED";
-  throw error;
+  throw new AgentError("UPLUS_NOT_IMPLEMENTED", "uplus WOL provider is not implemented yet");
 }
