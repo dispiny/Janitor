@@ -526,6 +526,13 @@ async function init() {
     ? "웹훅이 Worker에 설정되어 있습니다."
     : "웹훅이 아직 없습니다. wrangler secret put SLACK_WEBHOOK_URL";
 
+  const bootstrap = Boolean(state.config.bootstrapAllowed);
+  $("signup-house-field").hidden = !bootstrap;
+  $("signup-house").required = bootstrap;
+  $("signup-hint").textContent = bootstrap
+    ? "아직 계정이 없어 첫 집 주인을 만들 수 있습니다. 이후에는 초대받은 이메일만 가입됩니다."
+    : "설정에서 초대한 이메일만 가입됩니다. 아무나 계정을 만들 수 없습니다.";
+
   state.sb = createClient(state.config.supabaseUrl, state.config.supabaseAnonKey, {
     auth: { persistSession: true, autoRefreshToken: true },
   });
@@ -557,7 +564,7 @@ async function init() {
     $("tab-login").setAttribute("aria-selected", "false");
     $("panel-signup").hidden = false;
     $("panel-login").hidden = true;
-    $("auth-title").textContent = "계정 만들기";
+    $("auth-title").textContent = "초대 가입";
   });
 
   $("panel-login").addEventListener("submit", async (event) => {
@@ -579,14 +586,17 @@ async function init() {
     $("signup-error").textContent = "";
     const email = $("signup-email").value.trim();
     const password = $("signup-password").value;
+    const bootstrap = Boolean(state.config?.bootstrapAllowed);
     const houseName = $("signup-house").value.trim();
-    if (!houseName) {
-      $("signup-error").textContent = "집 이름이 필요합니다.";
+    if (bootstrap && !houseName) {
+      $("signup-error").textContent = "첫 계정은 집 이름이 필요합니다.";
       return;
     }
     const { data, error } = await state.sb.auth.signUp({ email, password });
     if (error) {
-      $("signup-error").textContent = error.message;
+      $("signup-error").textContent = error.message.includes("초대")
+        ? error.message
+        : (error.message || "가입이 거부되었습니다. 초대받은 이메일인지 확인하세요.");
       return;
     }
     if (!data.session) {
@@ -594,14 +604,17 @@ async function init() {
       return;
     }
     state.session = data.session;
-    const boot = await api("/api/bootstrap", {
-      method: "POST",
-      body: JSON.stringify({ houseName }),
-    });
+    if (bootstrap) {
+      await api("/api/bootstrap", {
+        method: "POST",
+        body: JSON.stringify({ houseName }),
+      });
+      await enterApp();
+      showToast(`${houseName} 을 만들었습니다. 이후 가입은 초대만 가능합니다.`);
+      return;
+    }
     await enterApp();
-    showToast(boot.created === false
-      ? "기존 집으로 입장했습니다."
-      : `${houseName} 을 만들었습니다. 서버는 비어 있습니다.`);
+    showToast("가입했습니다. 초대된 집으로 합류합니다.");
   });
 
   $("logout").addEventListener("click", async () => {

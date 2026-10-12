@@ -17,7 +17,7 @@
       <div class="auth-card">
       <div class="tabs" role="tablist">
         <button class="tab" id="tab-login" type="button" role="tab" aria-selected="true" aria-controls="panel-login">로그인</button>
-        <button class="tab" id="tab-signup" type="button" role="tab" aria-selected="false" aria-controls="panel-signup">계정 만들기</button>
+        <button class="tab" id="tab-signup" type="button" role="tab" aria-selected="false" aria-controls="panel-signup">초대 가입</button>
       </div>
       <h1 id="auth-title">로그인</h1>
 
@@ -28,16 +28,16 @@
         <div class="stack">
           <button class="primary" type="submit">로그인</button>
         </div>
-        <p class="hint">Supabase Auth로 로그인합니다. 키·웹훅·공유기 비밀번호는 이 화면에 두지 않습니다.</p>
+        <p class="hint">초대받은 계정만 로그인할 수 있습니다. 공개 가입은 막혀 있습니다.</p>
       </form>
 
       <form id="panel-signup" role="tabpanel" hidden>
-        <label class="field"><span>이메일</span><input id="signup-email" type="email" autocomplete="username" placeholder="you@example.com" required></label>
+        <label class="field"><span>초대받은 이메일</span><input id="signup-email" type="email" autocomplete="username" placeholder="you@example.com" required></label>
         <label class="field"><span>비밀번호</span><input id="signup-password" type="password" autocomplete="new-password" minlength="8" placeholder="8자 이상" required></label>
-        <label class="field"><span>집 이름</span><input id="signup-house" type="text" placeholder="우리집" required></label>
+        <label class="field" id="signup-house-field" hidden><span>집 이름</span><input id="signup-house" type="text" placeholder="우리집"></label>
         <p class="error" id="signup-error"></p>
-        <button class="primary" type="submit">집과 계정 만들기</button>
-        <p class="hint">집은 계정마다 따로 생깁니다. 서버와 멤버는 만든 뒤에 추가합니다. 샘플 데이터는 넣지 않습니다.</p>
+        <button class="primary" type="submit">가입하기</button>
+        <p class="hint" id="signup-hint">설정에서 초대한 이메일만 가입됩니다. 아무나 계정을 만들 수 없습니다.</p>
       </form>
       </div>
     </div>
@@ -205,7 +205,7 @@
               <input id="invite-email" type="email" placeholder="invite@example.com" required>
               <button class="primary" type="submit">초대</button>
             </form>
-            <p class="hint">이미 가입한 이메일만 집으로 초대할 수 있습니다.</p>
+            <p class="hint">이메일을 초대하면 상대방이 그 주소로만 가입·합류할 수 있습니다. 초대 전에는 가입이 거부됩니다.</p>
           </article>
           <article class="card">
             <div class="card-label">연동</div>

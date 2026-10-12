@@ -33,10 +33,14 @@ async function requireUser(env: Env, req: Request) {
 export async function handleApi(req: Request, env: Env, path: string): Promise<Response> {
   try {
     if (req.method === "GET" && path === "/api/config") {
+      const sb = anonClient(env);
+      const { data: signup } = await sb.rpc("signup_status");
       return json({
         supabaseUrl: env.SUPABASE_URL,
         supabaseAnonKey: env.SUPABASE_ANON_KEY,
         slackConfigured: Boolean(env.SLACK_WEBHOOK_URL),
+        inviteOnly: true,
+        bootstrapAllowed: Boolean((signup as { bootstrapAllowed?: boolean } | null)?.bootstrapAllowed),
       });
     }
 

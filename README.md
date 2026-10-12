@@ -50,6 +50,15 @@ npm install && npm start
 
 에이전트는 집 안에서만 돌리면 되고, 클라우드 요금은 없습니다.
 
+### 초대만 가입 (공개 가입 차단)
+
+DB에 `hook_invite_only_signup` 이 있습니다. **한 번만** 대시보드에서 훅을 켜 주세요.
+
+1. [Authentication → Hooks](https://supabase.com/dashboard/project/ypklxfwpbyroxdolgiun/auth/hooks)
+2. **Before User Created** → Postgres → `public.hook_invite_only_signup` → Save
+
+이후에는 설정에서 초대한 이메일만 가입됩니다. (계정이 하나도 없을 때만 첫 집 주인 가입 허용)
+
 ### 무료 티어에서 알아둘 점
 
 | 항목 | Free 한도 / 메모 |
@@ -70,7 +79,7 @@ cp .dev.vars.example .dev.vars   # 선택: SLACK_WEBHOOK_URL
 npm run dev
 ```
 
-브라우저에서 Worker 로컬 URL을 연 뒤 **계정 만들기**로 빈 집을 만듭니다. 서버·서비스 샘플은 넣지 않습니다.
+브라우저에서 Worker 로컬 URL을 연 뒤 로그인합니다. 공개 가입은 막혀 있고, 초대받은 이메일만 **초대 가입**할 수 있습니다.
 
 ## API 요약
 
