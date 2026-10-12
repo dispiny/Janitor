@@ -1,0 +1,87 @@
+# 집 에이전트
+
+항상 켜진 기기(cloudflared와 같은 호스트)에서 동작하는 Janitor 온프레미스 에이전트입니다.  
+깨울 서버마다 설치하지 않습니다. WOL, 공인 IP 조회, HTTP 헬스 체크를 대신합니다.
+
+코드 위치: [`agent/`](../agent/)
+
+## 왜 분리하나
+
+| 계층 | 담당 | 비밀값 예 |
+| --- | --- | --- |
+| Cloud Worker + Supabase | 로그인, 집/서버/서비스 CRUD, Slack 알림 | `SUPABASE_*`, `SLACK_WEBHOOK_URL` |
+| 집 에이전트 | LAN에서만 가능한 작업 | `AGENT_TOKEN`, `UPLUS_*`, `HEALTHCHECK_TOKEN` |
+
+대시보드와 Worker는 서버·서비스 **목록을 갖지 않는** 에이전트를 호출합니다.  
+목록·기대 상태 코드는 Supabase에 두고, 에이전트에는 그때그때 URL/MAC만 넘깁니다. 더미 데이터는 넣지 않습니다.
+
+## 구조
+
+```text
+agent/
+  contract.json          # Worker 연동용 계약 스냅샷
+  src/
+    index.ts             # 서버 진입
+    app.ts               # 라우트
+    auth.ts              # Bearer AGENT_TOKEN
+    public-ip.ts
+    health-check.ts
+    wol/
+      magic-packet.ts    # 수동 MAC WOL
+      uplus.ts           # U+ 공유기 자리 (현재 501)
+```
+
+기본 리슨: `0.0.0.0:3920`  
+프로세스 프로브만 무인증: `GET /healthz`  
+그 외 `/v1/*`는 Bearer 토큰 필수.
+
+## 환경 변수
+
+| 이름 | 필수 | 설명 |
+| --- | --- | --- |
+| `AGENT_TOKEN` | yes | Worker/대시보드가 보내는 Bearer 토큰 |
+| `PORT` | no | 기본 `3920` |
+| `HOST` | no | 기본 `0.0.0.0` |
+| `CF_TUNNEL_HOSTNAME` | no | 상태 응답에 광고할 Tunnel 호스트명 |
+| `UPLUS_ROUTER_URL` | no | U+ 공유기 관리 URL (U+ WOL용) |
+| `UPLUS_ROUTER_PASSWORD` | no | 공유기 비밀번호. API 응답에 절대 포함하지 않음 |
+| `HEALTHCHECK_TOKEN` | no | `useHealthToken: true`일 때 헬스 요청에 붙임 |
+
+샘플: [`agent/.env.example`](../agent/.env.example).  
+`.env`와 실제 비밀값은 git에 커밋하지 않습니다.
+
+## 로컬 실행
+
+```bash
+cd agent
+cp .env.example .env   # AGENT_TOKEN 설정
+npm install
+npm run typecheck
+npm test
+npm start
+```
+
+개발 중 재시작이 필요하면 `npm run dev` (`tsx watch`).
+
+스모크 예:
+
+```bash
+curl -sS http://127.0.0.1:3920/healthz
+curl -sS -H "Authorization: Bearer $AGENT_TOKEN" http://127.0.0.1:3920/v1/status
+```
+
+## 현재 구현 범위
+
+| 기능 | 상태 |
+| --- | --- |
+| 수동 MAC magic packet | 동작 |
+| 공인 IP 조회 | 동작 (`ipify` → `ifconfig.me` 폴백) |
+| HTTP 헬스 체크 | 동작 |
+| U+ 공유기 WOL | 자리만 (`501 uplus_not_implemented`) |
+| 속도 측정 | 미구현 (대시보드/Worker 쪽에서 연동 예정) |
+| Proxmox API 프록시 | 에이전트 범위 밖 (토큰은 서버/Worker 쪽) |
+
+## 관련 문서
+
+- [API 상세](./home-agent-api.md)
+- [Tunnel 연동](./home-agent-tunnel.md)

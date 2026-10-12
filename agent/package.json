@@ -1,13 +1,27 @@
 {
-  "name": "janitor-agent",
-  "private": true,
+  "name": "janitor-home-agent",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
+  "description": "Always-on home agent for Janitor: WOL, public IP, HTTP health checks",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test 'src/**/*.test.ts'",
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "engines": {
+    "node": ">=22.13.0"
   },
   "dependencies": {
-    "undici": "^7.16.0"
+    "@hono/node-server": "^1.14.4",
+    "hono": "^4.8.3",
+    "zod": "^3.25.67"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.32",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
   }
 }
