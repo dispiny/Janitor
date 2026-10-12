@@ -5,6 +5,7 @@ import type { AgentConfig } from "./config.js";
 import { isAgentError } from "./errors.js";
 import { checkHttp } from "./health-check.js";
 import { resolvePublicIp } from "./public-ip.js";
+import { tick } from "./poller.js";
 import { sendMagicPacket } from "./wol/magic-packet.js";
 import { wakeViaUplus } from "./wol/uplus.js";
 
@@ -154,6 +155,26 @@ export function createApp(config: AgentConfig) {
     });
     // Body still carries ok/status/ms; HTTP status lets Workers detect failure without parsing.
     return c.json(result, result.ok ? 200 : 502);
+  });
+
+  // Authenticated nudge: run one poll tick (no anonymous /job).
+  app.post("/v1/poll/now", async (c) => {
+    const cfg = c.get("config");
+    if (!cfg.janitorApiUrl) {
+      return c.json({ error: "JANITOR_API_URL is not configured" }, 400);
+    }
+    try {
+      await tick({
+        ...cfg,
+        janitorApiUrl: cfg.janitorApiUrl,
+      });
+      return c.json({ ok: true });
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : "poll failed" },
+        502,
+      );
+    }
   });
 
   return app;

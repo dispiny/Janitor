@@ -35,12 +35,18 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
     if (req.method === "GET" && path === "/api/config") {
       const sb = anonClient(env);
       const { data: signup } = await sb.rpc("signup_status");
+      const status = (signup || {}) as {
+        inviteOnly?: boolean;
+        bootstrapAllowed?: boolean;
+        hookReady?: boolean;
+      };
       return json({
         supabaseUrl: env.SUPABASE_URL,
         supabaseAnonKey: env.SUPABASE_ANON_KEY,
         slackConfigured: Boolean(env.SLACK_WEBHOOK_URL),
-        inviteOnly: true,
-        bootstrapAllowed: Boolean((signup as { bootstrapAllowed?: boolean } | null)?.bootstrapAllowed),
+        inviteOnly: status.inviteOnly !== false,
+        bootstrapAllowed: Boolean(status.bootstrapAllowed),
+        inviteHookReady: Boolean(status.hookReady),
       });
     }
 
@@ -202,19 +208,8 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
         .select("*")
         .single();
       if (error) return json({ error: error.message }, 400);
-
-      const { data: house } = await auth.sb!.from("houses").select("agent_url").eq("id", body.houseId).single();
-      if (house?.agent_url) {
-        try {
-          await fetch(new URL("/job", house.agent_url).toString(), {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(job),
-          });
-        } catch {
-          // Agent may be offline; job stays queued for poll.
-        }
-      }
+      // Jobs are consumed by the home agent poller (Bearer AGENT_TOKEN).
+      // No unauthenticated push endpoint — avoids DoS via anonymous /job.
       return json({ job });
     }
 

@@ -529,9 +529,14 @@ async function init() {
   const bootstrap = Boolean(state.config.bootstrapAllowed);
   $("signup-house-field").hidden = !bootstrap;
   $("signup-house").required = bootstrap;
-  $("signup-hint").textContent = bootstrap
+  let signupHint = bootstrap
     ? "아직 계정이 없어 첫 집 주인을 만들 수 있습니다. 이후에는 초대받은 이메일만 가입됩니다."
     : "설정에서 초대한 이메일만 가입됩니다. 아무나 계정을 만들 수 없습니다.";
+  if (state.config.inviteOnly && !state.config.inviteHookReady) {
+    signupHint +=
+      " ⚠ Supabase Auth Hook(Before User Created → hook_invite_only_signup)이 아직 연결되지 않았을 수 있습니다. 대시보드에서 활성화하세요.";
+  }
+  $("signup-hint").textContent = signupHint;
 
   state.sb = createClient(state.config.supabaseUrl, state.config.supabaseAnonKey, {
     auth: { persistSession: true, autoRefreshToken: true },

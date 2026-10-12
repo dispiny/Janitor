@@ -165,6 +165,19 @@ Authorization: Bearer <AGENT_TOKEN>
 
 ---
 
+## `POST /v1/poll/now`
+
+`JANITOR_API_URL`이 설정된 에이전트에서 폴링 tick을 한 번 즉시 실행합니다.  
+무인증 `POST /job`은 없습니다. Bearer `AGENT_TOKEN` 필수. 이미 tick이 돌고 있으면 가드로 스킵합니다.
+
+| 결과 | HTTP | body |
+| --- | --- | --- |
+| 성공 | `200` | `{ "ok": true }` |
+| `JANITOR_API_URL` 없음 | `400` | `{ "error": "JANITOR_API_URL is not configured" }` |
+| poll/report 실패 | `502` | `{ "error": "..." }` |
+
+---
+
 ## Worker 호출 요약
 
 ```http
@@ -172,8 +185,10 @@ GET  https://$CF_TUNNEL_HOSTNAME/v1/status
 GET  https://$CF_TUNNEL_HOSTNAME/v1/network/public-ip
 POST https://$CF_TUNNEL_HOSTNAME/v1/wake
 POST https://$CF_TUNNEL_HOSTNAME/v1/checks/http
+POST https://$CF_TUNNEL_HOSTNAME/v1/poll/now
 Authorization: Bearer $AGENT_TOKEN
 Content-Type: application/json
 ```
 
+작업 큐는 에이전트가 Worker `GET /api/agent/poll`로 가져갑니다 (토큰 해시 검증).  
 서버·서비스 목록은 에이전트에 캐시하지 마세요. Supabase가 source of truth입니다.

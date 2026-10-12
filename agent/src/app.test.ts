@@ -8,6 +8,8 @@ const config: AgentConfig = {
   port: 3920,
   host: "127.0.0.1",
   tunnelHostname: "agent.example.trycloudflare.com",
+  pollMs: 15000,
+  speedProbeBytes: 2_000_000,
 };
 
 describe("home agent HTTP API", () => {

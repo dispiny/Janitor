@@ -11,7 +11,7 @@
 | Supabase Free | Auth, Postgres, RLS | **무료** (프로젝트 2개 등 플랜 한도) |
 | Home agent (`agent/`) | 집 안 항상 켜진 기기 (cloudflared 옆) | 로컬/자택 하드웨어 |
 
-비밀값(`SLACK_WEBHOOK_URL`, `UPLUS_ROUTER_PASSWORD`, Proxmox 토큰 비밀, `AGENT_TOKEN`)은 git에 넣지 않습니다.
+비밀값과 환경 변수(`SUPABASE_ANON_KEY`, `SLACK_WEBHOOK_URL`, `UPLUS_ROUTER_PASSWORD`, Proxmox 토큰 비밀, `AGENT_TOKEN`)는 git에 넣지 않습니다. Worker는 `.dev.vars`(로컬) / `wrangler secret`(배포)로 주입합니다.
 
 ## 무료 배포 (권장: Cloudflare Workers)
 
@@ -23,6 +23,9 @@ Workers Free는 계정당 **하루 10만 요청**, Worker 크기·정적 자산�
 ```bash
 npm install
 npx wrangler login          # 브라우저에서 무료 Cloudflare 계정 연결
+# Dashboard Variables 또는:
+npx wrangler secret put SUPABASE_ANON_KEY
+# SUPABASE_URL 은 Dashboard → Settings → Variables 에 설정
 npm run deploy              # → https://janitor.<your-subdomain>.workers.dev
 npx wrangler secret put SLACK_WEBHOOK_URL   # 선택
 ```
@@ -75,7 +78,7 @@ DB에 `hook_invite_only_signup` 이 있습니다. **한 번만** 대시보드에
 
 ```bash
 npm install
-cp .dev.vars.example .dev.vars   # 선택: SLACK_WEBHOOK_URL
+cp .dev.vars.example .dev.vars   # SUPABASE_URL, SUPABASE_ANON_KEY 필수
 npm run dev
 ```
 
@@ -83,13 +86,13 @@ npm run dev
 
 ## API 요약
 
-- `GET /api/config` — 공개 Supabase URL/anon key
+- `GET /api/config` — Supabase URL/anon key + `inviteOnly` / `inviteHookReady` (`signup_status` RPC)
 - `POST /api/bootstrap` — 집 생성 (가입 직후)
 - `POST /api/servers` / `DELETE /api/servers/:id`
 - `POST /api/services` / `DELETE /api/services/:id`
-- `POST /api/jobs` — 에이전트 작업 큐 (wake, health_*, pve_sync, speed_probe)
+- `POST /api/jobs` — 인증된 작업 큐 enqueue (에이전트는 poll로 소비; 무인증 push 없음)
 - `POST /api/agent/token` — 에이전트 토큰 발급 (해시만 DB 저장)
-- `GET /api/agent/poll` / `POST /api/agent/report` — 에이전트 전용
+- `GET /api/agent/poll` / `POST /api/agent/report` — 에이전트 Bearer 전용
 
 ## 시안
 

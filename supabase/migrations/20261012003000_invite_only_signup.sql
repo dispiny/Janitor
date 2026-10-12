@@ -10,8 +10,21 @@ security definer
 set search_path = public, auth
 as $$
   select jsonb_build_object(
+    -- Product policy: only invited emails may sign up after bootstrap.
     'inviteOnly', true,
-    'bootstrapAllowed', not exists (select 1 from auth.users limit 1)
+    'bootstrapAllowed', not exists (select 1 from auth.users limit 1),
+    -- SQL hook installed + granted. Dashboard must still wire
+    -- Authentication → Hooks → Before User Created → this function.
+    'hookReady', (
+      case
+        when to_regprocedure('public.hook_invite_only_signup(jsonb)') is null then false
+        else has_function_privilege(
+          'supabase_auth_admin',
+          'public.hook_invite_only_signup(jsonb)',
+          'execute'
+        )
+      end
+    )
   );
 $$;
 
