@@ -12,7 +12,7 @@ const config: AgentConfig = {
 };
 
 describe("request logging", () => {
-  it("still serves healthz while logging", async () => {
+  it("logs received, processing, and complete phases", async () => {
     const lines: string[] = [];
     const original = console.log;
     console.log = (...args: unknown[]) => {
@@ -22,9 +22,12 @@ describe("request logging", () => {
       const app = createApp(config);
       const res = await app.request("/healthz");
       assert.equal(res.status, 200);
-      assert.ok(lines.some((line) => line.includes('"event":"request.start"')));
-      assert.ok(lines.some((line) => line.includes('"event":"request.done"')));
-      assert.ok(lines.some((line) => line.includes('"/healthz"')));
+      assert.ok(lines.some((line) => line.includes('"event":"request.received"')));
+      assert.ok(lines.some((line) => line.includes('"event":"request.processing"')));
+      assert.ok(lines.some((line) => line.includes('"event":"request.complete"')));
+      assert.ok(lines.some((line) => line.includes('"phase":"received"')));
+      assert.ok(lines.some((line) => line.includes('"phase":"processing"')));
+      assert.ok(lines.some((line) => line.includes('"phase":"complete"')));
     } finally {
       console.log = original;
     }

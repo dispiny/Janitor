@@ -97,27 +97,35 @@ export function createApp(config: AgentConfig) {
 
     try {
       if (parsed.data.mode === "manual") {
-        log("wake.start", {
+        log("wake.received", {
+          phase: "received",
           mode: "manual",
           mac: parsed.data.mac,
           broadcast: parsed.data.broadcast,
           port: parsed.data.port,
         });
+        log("wake.processing", {
+          phase: "processing",
+          mode: "manual",
+          mac: parsed.data.mac,
+        });
         const result = await sendMagicPacket(parsed.data);
-        log("wake.ok", result);
+        log("wake.complete", { phase: "complete", ...result });
         return c.json(result);
       }
 
-      log("wake.start", { mode: "uplus", device: parsed.data.device });
+      log("wake.received", { phase: "received", mode: "uplus", device: parsed.data.device });
+      log("wake.processing", { phase: "processing", mode: "uplus", device: parsed.data.device });
       const result = await wakeViaUplus({
         device: parsed.data.device,
         routerUrl: config.uplusRouterUrl,
         routerPassword: config.uplusRouterPassword,
       });
-      log("wake.ok", result);
+      log("wake.complete", { phase: "complete", ...result });
       return c.json(result);
     } catch (error) {
-      log("wake.fail", {
+      log("wake.failed", {
+        phase: "failed",
         mode: parsed.data.mode,
         error: error instanceof Error ? error.message : "wake failed",
         code: isAgentError(error) ? error.code : undefined,
