@@ -7,7 +7,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/*.test.js",
+    "test": "node --experimental-strip-types --test test/*.test.js",
     "agent:dev": "npm --prefix agent run start"
   },
   "devDependencies": {

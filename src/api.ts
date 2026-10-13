@@ -1,5 +1,5 @@
 import type { Env } from "./env";
-import { notifySlack } from "./slack";
+import { buildOpsAlert, notifySlack } from "./slack";
 import { sha256Hex, userClient } from "./supabase";
 import { createClient } from "@supabase/supabase-js";
 
@@ -249,8 +249,21 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
       const token = bearer(req);
       if (!token) return json({ error: "unauthorized" }, 401);
       const body = (await req.json()) as {
-        services?: Array<{ ok: boolean }>;
-        speed?: { down_mbps: number };
+        houseName?: string;
+        services?: Array<{
+          id?: string;
+          name?: string;
+          host?: string;
+          url?: string;
+          ok: boolean;
+          code?: number;
+          expect?: number;
+          ms?: number;
+          error?: string;
+          slackOnFail?: boolean;
+        }>;
+        speed?: { down_mbps: number; up_mbps?: number };
+        jobs?: Array<{ id?: string; kind?: string; status: string; error?: string }>;
       };
       const sb = anonClient(env);
       const { data, error } = await sb.rpc("agent_report", { p_token: token, p_payload: body });
@@ -259,21 +272,47 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
         return json({ error: error.message }, status);
       }
 
-      const house = (data as { house?: { slack_channel?: string; speed_threshold_mbps?: number } } | null)?.house;
+      const house = (data as {
+        house?: { name?: string; slack_channel?: string; speed_threshold_mbps?: number };
+      } | null)?.house;
       const channel = house?.slack_channel || "#homelab";
-      const failing = (body.services || []).filter((s) => !s.ok);
-      if (failing.length) {
-        await notifySlack(env, channel, `${failing.length}개 서비스 헬스 체크가 기대 응답이 아닙니다.`);
-      }
-      if (
+      const failingServices = (body.services || [])
+        .filter((s) => !s.ok)
+        .map((s) => ({
+          name: s.name || s.id || "서비스",
+          host: s.host || null,
+          url: s.url || null,
+          ok: false,
+          code: s.code ?? null,
+          expect: s.expect ?? null,
+          ms: s.ms ?? null,
+          error: s.error || null,
+          slackOnFail: s.slackOnFail !== false,
+        }));
+      const failedJobs = (body.jobs || []).filter((j) => j.status === "error");
+      const threshold = house?.speed_threshold_mbps;
+      const speedAlert =
         body.speed &&
-        house?.speed_threshold_mbps != null &&
-        Number(body.speed.down_mbps) < Number(house.speed_threshold_mbps)
-      ) {
+        threshold != null &&
+        Number(body.speed.down_mbps) < Number(threshold)
+          ? {
+              downMbps: Number(body.speed.down_mbps),
+              thresholdMbps: Number(threshold),
+              upMbps: body.speed.up_mbps != null ? Number(body.speed.up_mbps) : null,
+            }
+          : null;
+
+      const alertableServices = failingServices.filter((s) => s.slackOnFail !== false);
+      if (alertableServices.length || speedAlert || failedJobs.length) {
         await notifySlack(
           env,
           channel,
-          `다운로드 ${body.speed.down_mbps} Mbps가 임계값 ${house.speed_threshold_mbps} Mbps보다 낮습니다.`,
+          buildOpsAlert({
+            houseName: body.houseName || house?.name,
+            failingServices: alertableServices,
+            speed: speedAlert,
+            failedJobs,
+          }),
         );
       }
 
