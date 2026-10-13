@@ -26,25 +26,23 @@ npx wrangler login          # 브라우저에서 무료 Cloudflare 계정 연결
 # Dashboard Variables 또는:
 npx wrangler secret put SUPABASE_ANON_KEY
 # SUPABASE_URL 은 Dashboard → Settings → Variables 에 설정
-npm run deploy              # → https://ops.<your-subdomain>.workers.dev
+npm run deploy
 npx wrangler secret put SLACK_WEBHOOK_URL   # 선택
 ```
 
+배포 후 URL은 wrangler 출력 / Cloudflare Dashboard에서 확인하세요. 실제 호스트명은 git에 적지 마세요.
+
 ### 커스텀 도메인 (선택)
 
-본인 Cloudflare 존에 붙이려면 대시보드에서:
+**Workers & Pages → (Worker) → Settings → Domains & Routes → Add → Custom Domain**
 
-**Workers & Pages → ops → Settings → Domains & Routes → Add → Custom Domain**
-
-DNS를 손으로 `*.workers.dev` CNAME만 걸면 SSL/라우팅이 어긋날 수 있어, Custom Domain으로 붙이는 편이 안전합니다.  
-개인 호스트명은 `wrangler.jsonc`에 커밋하지 마세요.
+DNS를 손으로 `*.workers.dev` CNAME만 걸면 SSL/라우팅이 어긋날 수 있어, Custom Domain으로 붙이는 편이 안전합니다.
 
 ### 2) Supabase Auth URL 맞추기
 
 Supabase 대시보드 → **Authentication → URL Configuration**
 
-- Site URL: `https://ops.<your-subdomain>.workers.dev` (또는 연결한 커스텀 도메인)
-- Redirect URLs: 위 URL(들) 추가
+- Site URL / Redirect URLs: 배포한 Worker URL (또는 연결한 커스텀 도메인)
 
 **Authentication → Providers → Email → Confirm email** 을 끄면 가입 직후 바로 로그인됩니다.
 
