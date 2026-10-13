@@ -99,6 +99,7 @@ curl -sS -H "Authorization: Bearer $AGENT_TOKEN" http://127.0.0.1:3920/v1/status
 | 공인 IP 조회 | 동작 (`ipify` → `ifconfig.me` 폴백) |
 | HTTP 헬스 체크 | 동작 |
 | HTTP 요청 로그 | stdout JSON (`request.start` / `request.done`, 토큰 비출력) |
+| 속도 측정 로그 | `poller.speed.start` / `poller.speed.ok` (Mbps·bytes·ms) |
 | Job poller (`JANITOR_API_URL`) | 동작 (`tick` 동시 실행 가드, 인증 poll/report) |
 | 속도 측정 | `speed_probe` job (샘플 상한 `SPEED_PROBE_BYTES`) |
 | Proxmox 동기화 | `pve_sync` job (시크릿은 `server_secrets`, 클라이언트 RLS deny) |
