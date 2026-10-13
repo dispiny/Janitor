@@ -1,7 +1,8 @@
 import type { Env } from "./env";
 import { notifySlack } from "./slack";
-import { sha256Hex, userClient } from "./supabase";
-import { createClient } from "@supabase/supabase-js";
+import { anonClient, serviceClient, sha256Hex, userClient } from "./supabase";
+import { assertHttpUrl } from "./urls";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -15,12 +16,6 @@ function bearer(req: Request): string | null {
   return m?.[1] || null;
 }
 
-function anonClient(env: Env) {
-  return createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-}
-
 async function requireUser(env: Env, req: Request) {
   const token = bearer(req);
   if (!token) return { error: json({ error: "unauthorized" }, 401) };
@@ -28,6 +23,21 @@ async function requireUser(env: Env, req: Request) {
   const { data, error } = await sb.auth.getUser();
   if (error || !data.user) return { error: json({ error: "unauthorized" }, 401) };
   return { sb, user: data.user, token };
+}
+
+async function requireHouseOwner(
+  sb: SupabaseClient,
+  houseId: string,
+): Promise<Response | null> {
+  const { data, error } = await sb.rpc("is_house_owner", { target_house: houseId });
+  if (error) return json({ error: error.message }, 400);
+  if (!data) return json({ error: "owner만 할 수 있습니다." }, 403);
+  return null;
+}
+
+/** Prefer service role (SEC-10); fall back to anon until revoke migration is applied. */
+function agentDb(env: Env): SupabaseClient {
+  return serviceClient(env) ?? anonClient(env);
 }
 
 export async function handleApi(req: Request, env: Env, path: string): Promise<Response> {
@@ -106,20 +116,29 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
         return json({ error: "Proxmox 연동에는 API 주소와 노드 이름이 필요합니다." }, 400);
       }
 
+      const manage = assertHttpUrl(body.manageUrl || "", { allowEmpty: true, field: "관리 페이지 주소" });
+      if (!manage.ok) return json({ error: manage.error }, 400);
+      let pveHost: string | null = null;
+      if (body.pveEnabled) {
+        const pve = assertHttpUrl(body.pveHost || "", { field: "Proxmox API 주소" });
+        if (!pve.ok) return json({ error: pve.error }, 400);
+        pveHost = pve.url;
+      }
+
       const { data: server, error } = await auth.sb!
         .from("servers")
         .insert({
           house_id: body.houseId,
           name: body.name.trim(),
           role: (body.role || "").trim(),
-          manage_url: (body.manageUrl || "").trim(),
+          manage_url: manage.url,
           wol_mode: body.wolMode,
           wol_uplus_device: body.wolUplusDevice?.trim() || null,
           wol_mac: body.wolMac?.trim() || null,
           wol_broadcast: body.wolBroadcast?.trim() || null,
           wol_port: body.wolPort ?? 9,
           pve_enabled: Boolean(body.pveEnabled),
-          pve_host: body.pveHost?.trim() || null,
+          pve_host: pveHost,
           pve_node: body.pveNode?.trim() || null,
           pve_token_id: body.pveTokenId?.trim() || null,
         })
@@ -160,18 +179,23 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
         manageUrl?: string;
         slackOnFail?: boolean;
       };
-      if (!body.houseId || !body.name?.trim() || !/^https?:\/\//.test(body.healthUrl || "")) {
-        return json({ error: "이름과 http(s) 헬스 체크 주소가 필요합니다." }, 400);
+      if (!body.houseId || !body.name?.trim()) {
+        return json({ error: "이름과 집이 필요합니다." }, 400);
       }
+      const health = assertHttpUrl(body.healthUrl || "", { field: "헬스 체크 주소" });
+      if (!health.ok) return json({ error: health.error }, 400);
+      const manage = assertHttpUrl(body.manageUrl || "", { allowEmpty: true, field: "관리 페이지 주소" });
+      if (!manage.ok) return json({ error: manage.error }, 400);
+
       const { data: service, error } = await auth.sb!
         .from("services")
         .insert({
           house_id: body.houseId,
           name: body.name.trim(),
           host_label: (body.hostLabel || "").trim(),
-          health_url: body.healthUrl.trim(),
+          health_url: health.url,
           expect_status: body.expectStatus || 200,
-          manage_url: (body.manageUrl || "").trim(),
+          manage_url: manage.url,
           slack_on_fail: body.slackOnFail !== false,
         })
         .select("*")
@@ -218,13 +242,23 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
       if ("error" in auth && auth.error) return auth.error;
       const body = (await req.json()) as { houseId: string; agentUrl?: string; agentHostLabel?: string };
       if (!body.houseId) return json({ error: "집이 필요합니다." }, 400);
+      const forbidden = await requireHouseOwner(auth.sb!, body.houseId);
+      if (forbidden) return forbidden;
+
+      let agentUrl: string | null = null;
+      if (body.agentUrl?.trim()) {
+        const checked = assertHttpUrl(body.agentUrl, { field: "에이전트 URL" });
+        if (!checked.ok) return json({ error: checked.error }, 400);
+        agentUrl = checked.url;
+      }
+
       const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
       const hash = await sha256Hex(token);
       const { error } = await auth.sb!
         .from("houses")
         .update({
           agent_token_hash: hash,
-          agent_url: body.agentUrl?.trim() || null,
+          agent_url: agentUrl,
           agent_host_label: body.agentHostLabel?.trim() || null,
           updated_at: new Date().toISOString(),
         })
@@ -236,7 +270,7 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
     if (path === "/api/agent/poll" && req.method === "GET") {
       const token = bearer(req);
       if (!token) return json({ error: "unauthorized" }, 401);
-      const sb = anonClient(env);
+      const sb = agentDb(env);
       const { data, error } = await sb.rpc("agent_poll", { p_token: token });
       if (error) {
         const status = /unauthorized/i.test(error.message) ? 401 : 400;
@@ -252,7 +286,7 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
         services?: Array<{ ok: boolean }>;
         speed?: { down_mbps: number };
       };
-      const sb = anonClient(env);
+      const sb = agentDb(env);
       const { data, error } = await sb.rpc("agent_report", { p_token: token, p_payload: body });
       if (error) {
         const status = /unauthorized/i.test(error.message) ? 401 : 400;
@@ -286,6 +320,8 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
       const body = (await req.json()) as { houseId: string; email: string };
       const email = body.email?.trim().toLowerCase();
       if (!body.houseId || !email?.includes("@")) return json({ error: "이메일이 필요합니다." }, 400);
+      const forbidden = await requireHouseOwner(auth.sb!, body.houseId);
+      if (forbidden) return forbidden;
 
       const { error } = await auth.sb!.from("house_invites").upsert({
         house_id: body.houseId,

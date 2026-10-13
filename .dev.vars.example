@@ -6,5 +6,9 @@ SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 # Publishable anon key (Settings → API). Safe for clients via RLS, but keep out of git.
 SUPABASE_ANON_KEY=
 
+# Service role key (Settings → API). Required for /api/agent/poll and /api/agent/report.
+# Never expose to the browser. Local: .dev.vars / Deploy: wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+SUPABASE_SERVICE_ROLE_KEY=
+
 # Optional: Slack alerts when health/speed fails
 SLACK_WEBHOOK_URL=

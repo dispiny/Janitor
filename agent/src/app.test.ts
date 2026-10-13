@@ -108,4 +108,21 @@ describe("home agent HTTP API", () => {
     assert.equal(body.ok, false);
     assert.equal(body.status, 200);
   });
+
+  it("rejects metadata / non-http urls on http check", async () => {
+    const app = createApp(config);
+    const res = await app.request("/v1/checks/http", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer test-token",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        url: "http://169.254.169.254/latest/meta-data",
+      }),
+    });
+    assert.equal(res.status, 400);
+    const body = (await res.json()) as { error: string };
+    assert.equal(body.error, "url_not_allowed");
+  });
 });

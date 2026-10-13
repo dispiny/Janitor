@@ -3,7 +3,9 @@
 스캔 일자: 2026-10-13  
 대상: `main` 전체 (`src/`, `public/`, `agent/`, `supabase/migrations/`) + 원격 Supabase 프로젝트 `ypklxfwpbyroxdolgiun`  
 범위: 코드 리뷰, RLS/RPC 정책 점검, Supabase Database Linter (security advisors)  
-이 PR: **수정 구현이 아니라 명세**. 구현은 이슈별 후속 PR로 진행한다.
+
+**구현 상태 (이 PR):** SEC-01~06, SEC-08~11 코드/마이그레이션 적용.  
+SEC-07(평문 비밀 암호화)·SEC-12(HIBP 대시보드)는 운영 설정/후속으로 남김.
 
 ---
 

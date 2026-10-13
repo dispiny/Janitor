@@ -1,6 +1,7 @@
 import { checkHttp } from "./health-check.js";
 import type { AgentConfig } from "./config.js";
 import { resolvePublicIp } from "./public-ip.js";
+import { assertAllowedHttpUrl } from "./url-guard.js";
 import { sendMagicPacket } from "./wol/magic-packet.js";
 import { wakeViaUplus } from "./wol/uplus.js";
 
@@ -80,8 +81,18 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
             ? (snapshot.services || []).filter((s) => s.id === job.payload?.serviceId)
             : snapshot.services || [];
         for (const service of list) {
+          const allowed = assertAllowedHttpUrl(String(service.health_url || ""));
+          if (!allowed.ok) {
+            serviceResults.push({
+              id: String(service.id),
+              ok: false,
+              code: 0,
+              ms: 0,
+            });
+            continue;
+          }
           const result = await checkHttp({
-            url: String(service.health_url),
+            url: allowed.url,
             expectStatus: Number(service.expect_status || 200),
             authorization: cfg.healthcheckToken
               ? `Bearer ${cfg.healthcheckToken}`
@@ -100,7 +111,9 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
           if (!server.pve_enabled) continue;
           const secret = snapshot.secrets?.[String(server.id)];
           if (!secret || !server.pve_host || !server.pve_token_id || !server.pve_node) continue;
-          const base = String(server.pve_host).replace(/\/$/, "");
+          const pveUrl = assertAllowedHttpUrl(String(server.pve_host));
+          if (!pveUrl.ok) continue;
+          const base = pveUrl.url.replace(/\/$/, "");
           const auth = `${server.pve_token_id}=${secret}`;
           const headers = { Authorization: `PVEAPIToken=${auth}` };
           const node = encodeURIComponent(String(server.pve_node));

@@ -5,8 +5,8 @@ import test from "node:test";
 test("wrangler config exposes supabase url without secrets or service role", () => {
   const raw = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
   assert.match(raw, /ypklxfwpbyroxdolgiun\.supabase\.co/);
-  assert.doesNotMatch(raw, /SERVICE_ROLE/);
-  // Anon key must not be committed as a vars value (comments may mention the name).
+  // Secret names may appear in comments; values must not be committed under vars.
+  assert.doesNotMatch(raw, /"SUPABASE_SERVICE_ROLE_KEY"\s*:/);
   assert.doesNotMatch(raw, /"SUPABASE_ANON_KEY"\s*:/);
   assert.doesNotMatch(raw, /eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9/);
 });
@@ -38,4 +38,21 @@ test("migrations ship full RLS RPC and invites SQL", () => {
   assert.match(rpc, /create or replace function public\.agent_poll/);
   assert.match(rpc, /create policy houses_select/);
   assert.ok(rpc.length > 2000, "migration must not be an empty stub");
+});
+
+test("security lockdown migration removes self-join and scopes agent RPCs", () => {
+  const sql = readFileSync(
+    new URL("../supabase/migrations/20261013070000_security_lockdown.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(sql, /is_house_owner/);
+  assert.match(sql, /drop policy if exists members_insert/);
+  assert.match(sql, /drop policy if exists houses_insert/);
+  assert.match(sql, /grant execute on function public\.agent_poll\(text\) to service_role/);
+
+  const revoke = readFileSync(
+    new URL("../supabase/migrations/20261013070100_revoke_agent_rpc_anon.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(revoke, /revoke all on function public\.agent_poll\(text\) from public, anon, authenticated/);
 });

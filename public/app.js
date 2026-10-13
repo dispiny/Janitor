@@ -10,12 +10,35 @@ const state = {
   sb: null,
   session: null,
   house: null,
+  membershipRole: null,
   members: [],
   servers: [],
   services: [],
   guests: [],
   speeds: [],
 };
+
+function isOwner() {
+  return state.membershipRole === "owner";
+}
+
+function isSafeHttpUrl(raw) {
+  const value = (raw || "").trim();
+  if (!value) return false;
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+  if (parsed.username || parsed.password) return false;
+  const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (!host) return false;
+  if (host === "metadata.google.internal" || host === "metadata.goog" || host === "metadata") return false;
+  if (/^169\.254\./.test(host)) return false;
+  return true;
+}
 
 function showToast(text) {
   const el = $("toast");
@@ -103,6 +126,7 @@ async function loadHouseData() {
   if (error) throw error;
   if (!membership) {
     state.house = null;
+    state.membershipRole = null;
     state.members = [];
     state.servers = [];
     state.services = [];
@@ -111,6 +135,7 @@ async function loadHouseData() {
     return;
   }
   state.house = membership.houses;
+  state.membershipRole = membership.role || "member";
   const houseId = state.house.id;
 
   const [members, servers, services, guests, speeds] = await Promise.all([
@@ -412,6 +437,7 @@ function render() {
   renderList($("dash-services"), state.services.filter((s) => s.ok === false), (s) => serviceCard(s, false), "실패한 헬스 체크가 없습니다.");
   renderList($("service-list"), state.services, (s) => serviceCard(s, true), "등록된 서비스가 없습니다. 헬스 체크 주소를 추가하면 됩니다.");
   renderPve();
+  applyOwnerUi();
 
   const members = $("members");
   members.replaceChildren();
@@ -419,9 +445,9 @@ function render() {
     const row = document.createElement("div");
     row.className = "member";
     const name = document.createElement("span");
-    name.textContent = member.email;
+    name.textContent = `${member.email}${member.role === "owner" ? " (owner)" : ""}`;
     row.appendChild(name);
-    if (member.user_id !== state.session.user.id) {
+    if (isOwner() && member.user_id !== state.session.user.id) {
       const remove = document.createElement("button");
       remove.className = "text-btn";
       remove.type = "button";
@@ -463,9 +489,29 @@ function openManage(url) {
     showToast("관리 페이지 주소가 없습니다.");
     return;
   }
+  if (!isSafeHttpUrl(url)) {
+    showToast("허용되지 않는 관리 페이지 주소입니다.");
+    return;
+  }
   $("redir-url").textContent = url;
   $("open-redir").href = url;
   $("redirect-modal").hidden = false;
+}
+
+function applyOwnerUi() {
+  const owner = isOwner();
+  ["save-house", "save-speed-settings", "mint-agent-token"].forEach((id) => {
+    const el = $(id);
+    if (el) el.disabled = !owner;
+  });
+  const invite = $("invite-form");
+  if (invite) {
+    invite.querySelectorAll("input, button").forEach((el) => {
+      el.disabled = !owner;
+    });
+  }
+  const hint = $("owner-only-hint");
+  if (hint) hint.hidden = owner;
 }
 
 function setWol(mode) {
@@ -527,16 +573,22 @@ async function init() {
     : "웹훅이 아직 없습니다. wrangler secret put SLACK_WEBHOOK_URL";
 
   const bootstrap = Boolean(state.config.bootstrapAllowed);
+  const hookReady = Boolean(state.config.inviteHookReady);
+  const signupBlocked = state.config.inviteOnly && !hookReady && !bootstrap;
   $("signup-house-field").hidden = !bootstrap;
   $("signup-house").required = bootstrap;
   let signupHint = bootstrap
     ? "아직 계정이 없어 첫 집 주인을 만들 수 있습니다. 이후에는 초대받은 이메일만 가입됩니다."
     : "설정에서 초대한 이메일만 가입됩니다. 아무나 계정을 만들 수 없습니다.";
-  if (state.config.inviteOnly && !state.config.inviteHookReady) {
+  if (state.config.inviteOnly && !hookReady) {
     signupHint +=
-      " ⚠ Supabase Auth Hook(Before User Created → hook_invite_only_signup)이 아직 연결되지 않았을 수 있습니다. 대시보드에서 활성화하세요.";
+      " ⚠ Supabase Auth Hook(Before User Created → hook_invite_only_signup)이 연결되지 않아 초대 가입을 막았습니다. 대시보드에서 활성화하세요.";
   }
   $("signup-hint").textContent = signupHint;
+  $("tab-signup").disabled = signupBlocked;
+  $("panel-signup").querySelectorAll("input, button").forEach((el) => {
+    el.disabled = signupBlocked;
+  });
 
   state.sb = createClient(state.config.supabaseUrl, state.config.supabaseAnonKey, {
     auth: { persistSession: true, autoRefreshToken: true },
@@ -725,20 +777,36 @@ async function init() {
   $("probe-speed").addEventListener("click", () => enqueueJob("speed_probe"));
 
   $("save-speed-settings").addEventListener("click", async () => {
+    if (!isOwner()) {
+      showToast("owner만 설정을 바꿀 수 있습니다.");
+      return;
+    }
     const threshold = Number($("threshold").value);
     const channel = $("slack-channel").value.trim() || "#homelab";
-    await state.sb.from("houses").update({
+    const { error } = await state.sb.from("houses").update({
       speed_threshold_mbps: threshold,
       slack_channel: channel,
       updated_at: new Date().toISOString(),
     }).eq("id", state.house.id);
+    if (error) {
+      showToast(error.message);
+      return;
+    }
     showToast("속도 알림 설정을 저장했습니다.");
     await refresh();
   });
 
   $("save-house").addEventListener("click", async () => {
+    if (!isOwner()) {
+      showToast("owner만 집 이름을 바꿀 수 있습니다.");
+      return;
+    }
     const name = $("house-input").value.trim() || "이름 없는 집";
-    await state.sb.from("houses").update({ name, updated_at: new Date().toISOString() }).eq("id", state.house.id);
+    const { error } = await state.sb.from("houses").update({ name, updated_at: new Date().toISOString() }).eq("id", state.house.id);
+    if (error) {
+      showToast(error.message);
+      return;
+    }
     showToast("집 이름을 저장했습니다.");
     await refresh();
   });
