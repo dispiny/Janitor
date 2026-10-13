@@ -1,0 +1,10 @@
+# Copy to .dev.vars for local `wrangler dev` (never commit real values)
+
+# Supabase project URL (Settings → API)
+SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+
+# Publishable anon key (Settings → API). Safe for clients via RLS, but keep out of git.
+SUPABASE_ANON_KEY=
+
+# Optional: Slack alerts when health/speed fails
+SLACK_WEBHOOK_URL=

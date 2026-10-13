@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "janitor",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-11",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // API must hit the Worker before SPA fallback serves index.html
+    "run_worker_first": ["/api/*"]
+  },
+  "observability": {
+    "enabled": true,
+    "traces": {
+      "enabled": true
+    }
+  },
+  // Public project URL only — never commit SUPABASE_ANON_KEY here.
+  "vars": {
+    "SUPABASE_URL": "https://ypklxfwpbyroxdolgiun.supabase.co"
+  },
+  // Custom hostname (zone must be on the same Cloudflare account as this Worker)
+  "routes": [
+    { "pattern": "janitor.dispiny.life", "custom_domain": true }
+  ]
+  // Secrets (not committed):
+  //   wrangler secret put SUPABASE_ANON_KEY
+  //   wrangler secret put SLACK_WEBHOOK_URL   # optional
+  // Local: copy .dev.vars.example → .dev.vars
+}

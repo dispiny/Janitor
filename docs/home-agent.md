@@ -21,25 +21,29 @@
 agent/
   contract.json          # Worker 연동용 계약 스냅샷
   src/
-    index.ts             # 서버 진입
-    app.ts               # 라우트
-    auth.ts              # Bearer AGENT_TOKEN
+    index.ts             # 서버 진입 + 선택적 job poller
+    app.ts               # /v1/* 라우트 (safeEqual Bearer)
+    auth.ts              # timing-safe Bearer AGENT_TOKEN
+    poller.ts            # JANITOR_API_URL 있을 때 /api/agent/poll
     public-ip.ts
     health-check.ts
     wol/
       magic-packet.ts    # 수동 MAC WOL
-      uplus.ts           # U+ 공유기 자리 (현재 501)
+      uplus.ts           # U+ 자리 (501; CGI 추측 없음)
 ```
 
 기본 리슨: `0.0.0.0:3920`  
 프로세스 프로브만 무인증: `GET /healthz`  
-그 외 `/v1/*`는 Bearer 토큰 필수.
+그 외 `/v1/*`는 Bearer 토큰 필수. 무인증 `POST /job` 없음 — 작업은 poller가 가져가며, 수동 실행은 `POST /v1/poll/now`(인증)만.
 
 ## 환경 변수
 
 | 이름 | 필수 | 설명 |
 | --- | --- | --- |
 | `AGENT_TOKEN` | yes | Worker/대시보드가 보내는 Bearer 토큰 |
+| `JANITOR_API_URL` | poll용 | Worker base URL. 있으면 job 큐를 폴링 |
+| `AGENT_POLL_MS` | no | 폴링 간격(ms), 기본 `15000`, 최소 `3000` |
+| `SPEED_PROBE_BYTES` | no | speed_probe 샘플 상한(기본 2MiB, 최대 5MiB) |
 | `PORT` | no | 기본 `3920` |
 | `HOST` | no | 기본 `0.0.0.0` |
 | `CF_TUNNEL_HOSTNAME` | no | 상태 응답에 광고할 Tunnel 호스트명 |
@@ -77,9 +81,10 @@ curl -sS -H "Authorization: Bearer $AGENT_TOKEN" http://127.0.0.1:3920/v1/status
 | 수동 MAC magic packet | 동작 |
 | 공인 IP 조회 | 동작 (`ipify` → `ifconfig.me` 폴백) |
 | HTTP 헬스 체크 | 동작 |
-| U+ 공유기 WOL | 자리만 (`501 uplus_not_implemented`) |
-| 속도 측정 | 미구현 (대시보드/Worker 쪽에서 연동 예정) |
-| Proxmox API 프록시 | 에이전트 범위 밖 (토큰은 서버/Worker 쪽) |
+| Job poller (`JANITOR_API_URL`) | 동작 (`tick` 동시 실행 가드, 인증 poll/report) |
+| U+ 공유기 WOL | 자리만 (`501 uplus_not_implemented`, CGI 추측 없음) |
+| 속도 측정 | `speed_probe` job (샘플 상한 `SPEED_PROBE_BYTES`) |
+| Proxmox 동기화 | `pve_sync` job (시크릿은 `server_secrets`, 클라이언트 RLS deny) |
 
 ## 관련 문서
 

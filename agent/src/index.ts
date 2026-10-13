@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
 import { readConfig } from "./config.js";
+import { startPoller } from "./poller.js";
 
 const config = readConfig();
 const app = createApp(config);
@@ -18,7 +19,15 @@ serve(
         host: config.host,
         port: info.port,
         tunnelHostname: config.tunnelHostname ?? null,
+        polling: Boolean(config.janitorApiUrl),
       }),
     );
   },
 );
+
+if (config.janitorApiUrl) {
+  startPoller({
+    ...config,
+    janitorApiUrl: config.janitorApiUrl,
+  });
+}
