@@ -1,6 +1,7 @@
 import { checkHttp } from "./health-check.js";
 import type { AgentConfig } from "./config.js";
 import { resolvePublicIp } from "./public-ip.js";
+import { log } from "./log.js";
 import { sendMagicPacket } from "./wol/magic-packet.js";
 import { wakeViaUplus } from "./wol/uplus.js";
 
@@ -57,18 +58,25 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
         const server = (snapshot.servers || []).find((s) => s.id === job.payload?.serverId);
         if (!server) throw new Error("server not found");
         const mode = String(server.wol_mode || "off");
+        log("poller.wake.start", {
+          jobId: job.id,
+          serverId: server.id,
+          mode,
+        });
         if (mode === "manual") {
-          await sendMagicPacket({
+          const result = await sendMagicPacket({
             mac: String(server.wol_mac),
             broadcast: String(server.wol_broadcast || "192.168.0.255"),
             port: Number(server.wol_port || 9),
           });
+          log("poller.wake.ok", { jobId: job.id, ...result });
         } else if (mode === "uplus") {
-          await wakeViaUplus({
+          const result = await wakeViaUplus({
             device: String(server.wol_uplus_device || ""),
             routerUrl: cfg.uplusRouterUrl,
             routerPassword: cfg.uplusRouterPassword,
           });
+          log("poller.wake.ok", { jobId: job.id, ...result });
         } else {
           throw new Error("WOL disabled");
         }
