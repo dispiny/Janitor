@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "janitor",
+  "name": "ops",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-11",
   "compatibility_flags": ["nodejs_compat"],
@@ -21,7 +21,7 @@
   "vars": {
     "SUPABASE_URL": "https://ypklxfwpbyroxdolgiun.supabase.co"
   }
-  // Optional custom domain: Dashboard → Workers → janitor → Domains & Routes
+  // Optional custom domain: Dashboard → Workers → ops → Domains & Routes
   // (do not commit personal hostnames here)
   // Secrets (not committed):
   //   wrangler secret put SUPABASE_ANON_KEY
