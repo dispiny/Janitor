@@ -1,0 +1,44 @@
+# Fail CI if personal production hostnames leak into the repo.
+name: Block personal hosts
+
+on:
+  push:
+    branches: [main, "cursor/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reject personal hostnames in tree
+        run: |
+          set -euo pipefail
+          patterns=(
+            'dispiny\.life'
+            'janitor\.dispiny\.life'
+            'classy-cotija\.workers\.dev'
+          )
+          # Skip this workflow file itself (documents the banned patterns).
+          exclude=(
+            ':(exclude).github/workflows/block-personal-hosts.yml'
+          )
+          failed=0
+          for pat in "${patterns[@]}"; do
+            if matches=$(git grep -nE "$pat" -- . "${exclude[@]}" 2>/dev/null || true); then
+              if [[ -n "$matches" ]]; then
+                echo "::error::Forbidden hostname pattern matched: $pat"
+                echo "$matches"
+                failed=1
+              fi
+            fi
+          done
+          if [[ "$failed" -ne 0 ]]; then
+            echo "Remove personal hostnames. Use placeholders like janitor.<your-subdomain>.workers.dev, and attach custom domains only in the Cloudflare dashboard."
+            exit 1
+          fi
+          echo "OK: no banned personal hostnames in tracked files."

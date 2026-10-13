@@ -21,6 +21,8 @@
   "vars": {
     "SUPABASE_URL": "https://ypklxfwpbyroxdolgiun.supabase.co"
   }
+  // Optional custom domain: Dashboard → Workers → janitor → Domains & Routes
+  // (do not commit personal hostnames here)
   // Secrets (not committed):
   //   wrangler secret put SUPABASE_ANON_KEY
   //   wrangler secret put SLACK_WEBHOOK_URL   # optional

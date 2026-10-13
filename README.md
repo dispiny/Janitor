@@ -30,12 +30,21 @@ npm run deploy              # → https://janitor.<your-subdomain>.workers.dev
 npx wrangler secret put SLACK_WEBHOOK_URL   # 선택
 ```
 
+### 커스텀 도메인 (선택)
+
+본인 Cloudflare 존에 붙이려면 대시보드에서:
+
+**Workers & Pages → janitor → Settings → Domains & Routes → Add → Custom Domain**
+
+DNS를 손으로 `*.workers.dev` CNAME만 걸면 SSL/라우팅이 어긋날 수 있어, Custom Domain으로 붙이는 편이 안전합니다.  
+개인 호스트명은 `wrangler.jsonc`에 커밋하지 마세요.
+
 ### 2) Supabase Auth URL 맞추기
 
 Supabase 대시보드 → **Authentication → URL Configuration**
 
-- Site URL: `https://janitor.<your-subdomain>.workers.dev`
-- Redirect URLs: 위 URL 추가
+- Site URL: `https://janitor.<your-subdomain>.workers.dev` (또는 연결한 커스텀 도메인)
+- Redirect URLs: 위 URL(들) 추가
 
 **Authentication → Providers → Email → Confirm email** 을 끄면 가입 직후 바로 로그인됩니다.
 
