@@ -84,11 +84,12 @@ export async function runSelfUpdate(cfg: AgentConfig): Promise<SelfUpdateResult>
   }
 
   if (await exists(join(repoDir, "package.json"))) {
-    // Prefer lockfile install when present.
+    // Keep runtime deps (including tsx). Do not use --omit=dev here — the
+    // agent starts with `node --import tsx` and needs that package installed.
     const hasLock = await exists(join(repoDir, "package-lock.json"));
     npmInstall = hasLock
-      ? await run("npm", ["ci", "--omit=dev"], repoDir)
-      : await run("npm", ["install", "--omit=dev"], repoDir);
+      ? await run("npm", ["ci"], repoDir)
+      : await run("npm", ["install"], repoDir);
   }
 
   const pm2AppName =

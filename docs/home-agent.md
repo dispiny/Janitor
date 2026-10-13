@@ -108,7 +108,16 @@ curl -sS -H "Authorization: Bearer $AGENT_TOKEN" http://127.0.0.1:3920/v1/status
 | 속도 측정 | `speed_probe` job (샘플 상한 `SPEED_PROBE_BYTES`) |
 | Proxmox 동기화 | `pve_sync` job (시크릿은 `server_secrets`, 클라이언트 RLS deny) |
 
-pm2 예시: `agent/ecosystem.config.cjs` → `pm2 start ecosystem.config.cjs`
+pm2 예시 (agent/ 에서):
+
+```bash
+npm install
+pm2 delete janitor-agent 2>/dev/null || true
+pm2 start ecosystem.config.cjs
+pm2 save
+```
+
+`tsx: command not found` 가 나면 `npm install` 후 위처럼 **ecosystem으로** 다시 띄우세요. (`pm2 start npm -- start` 비권장)
 
 ## 관련 문서
 
