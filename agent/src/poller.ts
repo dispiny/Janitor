@@ -25,20 +25,53 @@ type PollSnapshot = {
 
 let ticking = false;
 
-async function api(cfg: PollerConfig, path: string, init?: RequestInit) {
-  const res = await fetch(`${cfg.janitorApiUrl}${path}`, {
-    ...init,
-    headers: {
-      authorization: `Bearer ${cfg.token}`,
-      "content-type": "application/json",
-      ...(init?.headers || {}),
-    },
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error((data as { error?: string }).error || `${res.status} ${path}`);
+/** Log host+pathname only — drop query/hash so tokens in URLs are not written. */
+function safeUrlForLog(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value) return undefined;
+  try {
+    const parsed = new URL(value);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return value.split("?")[0]?.split("#")[0] || value;
   }
-  return data;
+}
+
+async function api(cfg: PollerConfig, path: string, init?: RequestInit) {
+  const method = init?.method || "GET";
+  log("poller.api.received", { phase: "received", method, path });
+  log("poller.api.processing", { phase: "processing", method, path });
+  const started = performance.now();
+  try {
+    const res = await fetch(`${cfg.janitorApiUrl}${path}`, {
+      ...init,
+      headers: {
+        authorization: `Bearer ${cfg.token}`,
+        "content-type": "application/json",
+        ...(init?.headers || {}),
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error((data as { error?: string }).error || `${res.status} ${path}`);
+    }
+    log("poller.api.complete", {
+      phase: "complete",
+      method,
+      path,
+      status: res.status,
+      ms: Math.round(performance.now() - started),
+    });
+    return data;
+  } catch (error) {
+    log("poller.api.failed", {
+      phase: "failed",
+      method,
+      path,
+      ms: Math.round(performance.now() - started),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 }
 
 async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
@@ -66,13 +99,19 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
   let speed: { down_mbps: number; up_mbps: number } | undefined;
 
   for (const job of snapshot.jobs || []) {
+    const jobBase = { jobId: job.id, kind: job.kind };
+    log("poller.job.received", { ...jobBase, phase: "received", payload: job.payload });
+    log("poller.job.processing", { ...jobBase, phase: "processing" });
+    const jobStarted = performance.now();
+
     try {
       if (job.kind === "wake") {
         const server = (snapshot.servers || []).find((s) => s.id === job.payload?.serverId);
         if (!server) throw new Error("server not found");
         const mode = String(server.wol_mode || "off");
-        log("poller.wake.start", {
-          jobId: job.id,
+        log("poller.wake.processing", {
+          ...jobBase,
+          phase: "processing",
           serverId: server.id,
           mode,
         });
@@ -82,14 +121,14 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
             broadcast: String(server.wol_broadcast || "192.168.0.255"),
             port: Number(server.wol_port || 9),
           });
-          log("poller.wake.ok", { jobId: job.id, ...result });
+          log("poller.wake.complete", { ...jobBase, phase: "complete", ...result });
         } else if (mode === "uplus") {
           const result = await wakeViaUplus({
             device: String(server.wol_uplus_device || ""),
             routerUrl: cfg.uplusRouterUrl,
             routerPassword: cfg.uplusRouterPassword,
           });
-          log("poller.wake.ok", { jobId: job.id, ...result });
+          log("poller.wake.complete", { ...jobBase, phase: "complete", ...result });
         } else {
           throw new Error("WOL disabled");
         }
@@ -102,12 +141,26 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
             : snapshot.services || [];
         for (const service of list) {
           const expect = Number(service.expect_status || 200);
+          log("poller.health.processing", {
+            ...jobBase,
+            phase: "processing",
+            serviceId: service.id,
+            url: safeUrlForLog(service.health_url),
+          });
           const result = await checkHttp({
             url: String(service.health_url),
             expectStatus: expect,
             authorization: cfg.healthcheckToken
               ? `Bearer ${cfg.healthcheckToken}`
               : undefined,
+          });
+          log("poller.health.complete", {
+            ...jobBase,
+            phase: "complete",
+            serviceId: service.id,
+            ok: result.ok,
+            status: result.status,
+            ms: result.ms,
           });
           serviceResults.push({
             id: String(service.id),
@@ -128,6 +181,12 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
           if (!server.pve_enabled) continue;
           const secret = snapshot.secrets?.[String(server.id)];
           if (!secret || !server.pve_host || !server.pve_token_id || !server.pve_node) continue;
+          log("poller.pve.processing", {
+            ...jobBase,
+            phase: "processing",
+            serverId: server.id,
+            node: server.pve_node,
+          });
           const base = String(server.pve_host).replace(/\/$/, "");
           const auth = `${server.pve_token_id}=${secret}`;
           const headers = { Authorization: `PVEAPIToken=${auth}` };
@@ -160,6 +219,12 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
               });
             }
           }
+          log("poller.pve.complete", {
+            ...jobBase,
+            phase: "complete",
+            serverId: server.id,
+            guests: guests.filter((g) => g.server_id === String(server.id)).length,
+          });
         }
         jobResults.push({ id: job.id, status: "done", result: { guests: guests.length } });
       } else if (job.kind === "speed_probe") {
@@ -167,6 +232,9 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
         const url =
           process.env.SPEEDTEST_URL ||
           `https://speed.cloudflare.com/__down?bytes=${bytes}`;
+        const urlForLog = safeUrlForLog(url);
+        log("poller.speed.received", { ...jobBase, phase: "received", url: urlForLog, bytes });
+        log("poller.speed.processing", { ...jobBase, phase: "processing", url: urlForLog, bytes });
         const started = Date.now();
         const res = await fetch(url, { signal: AbortSignal.timeout(60000) });
         if (!res.ok || !res.body) throw new Error("speed probe failed");
@@ -175,23 +243,45 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
           read += chunk.byteLength;
           if (read >= bytes) break;
         }
-        const seconds = Math.max(0.001, (Date.now() - started) / 1000);
+        const ms = Date.now() - started;
+        const seconds = Math.max(0.001, ms / 1000);
         speed = {
           down_mbps: Math.round(((read * 8) / seconds / 1_000_000) * 10) / 10,
           up_mbps: 0,
         };
+        log("poller.speed.complete", {
+          ...jobBase,
+          phase: "complete",
+          bytesRead: read,
+          ms,
+          down_mbps: speed.down_mbps,
+          up_mbps: speed.up_mbps,
+        });
         jobResults.push({ id: job.id, status: "done", result: speed });
       } else if (job.kind === "agent_update") {
         const result = await runSelfUpdate(cfg);
         jobResults.push({ id: job.id, status: "done", result });
       } else {
-        jobResults.push({ id: job.id, status: "error", error: "unknown job" });
+        throw new Error("unknown job");
       }
+
+      log("poller.job.complete", {
+        ...jobBase,
+        phase: "complete",
+        ms: Math.round(performance.now() - jobStarted),
+      });
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log("poller.job.failed", {
+        ...jobBase,
+        phase: "failed",
+        ms: Math.round(performance.now() - jobStarted),
+        error: message,
+      });
       jobResults.push({
         id: job.id,
         status: "error",
-        error: err instanceof Error ? err.message : String(err),
+        error: message,
       });
     }
   }
@@ -201,10 +291,13 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
 
 export async function tick(cfg: PollerConfig): Promise<void> {
   if (ticking) {
-    console.warn(JSON.stringify({ event: "tick_skipped", reason: "already_running" }));
+    log("tick_skipped", { phase: "skipped", reason: "already_running" });
     return;
   }
   ticking = true;
+  log("tick.received", { phase: "received" });
+  log("tick.processing", { phase: "processing" });
+  const started = performance.now();
   try {
     const snapshot = (await api(cfg, "/api/agent/poll")) as PollSnapshot;
     const ip = await resolvePublicIp().catch(() => null);
@@ -230,16 +323,23 @@ export async function tick(cfg: PollerConfig): Promise<void> {
         })),
       }),
     });
-    console.log(
-      JSON.stringify({
-        event: "tick_ok",
-        house: snapshot.house?.name,
-        jobs: (snapshot.jobs || []).length,
-        publicIp: ip?.ip ?? null,
-        agentVersion: agentStatus.version,
-        pm2: agentStatus.pm2,
-      }),
-    );
+    log("tick.complete", {
+      phase: "complete",
+      house: snapshot.house?.name,
+      jobs: (snapshot.jobs || []).length,
+      publicIp: ip?.ip ?? null,
+      speed: handled.speed ?? null,
+      agentVersion: agentStatus.version,
+      pm2: agentStatus.pm2,
+      ms: Math.round(performance.now() - started),
+    });
+  } catch (err) {
+    log("tick.failed", {
+      phase: "failed",
+      ms: Math.round(performance.now() - started),
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
   } finally {
     ticking = false;
   }
@@ -249,13 +349,8 @@ export function startPoller(cfg: PollerConfig): void {
   const loop = async () => {
     try {
       await tick(cfg);
-    } catch (err) {
-      console.error(
-        JSON.stringify({
-          event: "tick_failed",
-          message: err instanceof Error ? err.message : String(err),
-        }),
-      );
+    } catch {
+      // tick() already emitted tick.failed — do not log again.
     } finally {
       setTimeout(loop, cfg.pollMs);
     }

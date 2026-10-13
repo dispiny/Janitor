@@ -101,7 +101,7 @@ curl -sS -H "Authorization: Bearer $AGENT_TOKEN" http://127.0.0.1:3920/v1/status
 | U+ 공유기 WOL | **미구현** (`501 uplus_not_implemented`) |
 | 공인 IP 조회 | 동작 (`ipify` → `ifconfig.me` 폴백) |
 | HTTP 헬스 체크 | 동작 |
-| HTTP 요청 로그 | stdout JSON (`request.start` / `request.done`, 토큰 비출력) |
+| 요청 로그 | 모든 HTTP·job을 `received` → `processing` → `complete`/`failed` 3단계로 stdout JSON (토큰 비출력) |
 | Job poller (`JANITOR_API_URL`) | 동작 (`tick` 동시 실행 가드, 인증 poll/report) |
 | 런타임 상태 보고 | 버전·hostname·pm2·uptime을 매 tick 보고, UI 자동 표시 |
 | 원격 업데이트 | `agent_update` job → git pull + npm + `pm2 restart` (opt-in) |
