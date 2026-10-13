@@ -147,6 +147,7 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
         const url =
           process.env.SPEEDTEST_URL ||
           `https://speed.cloudflare.com/__down?bytes=${bytes}`;
+        log("poller.speed.start", { jobId: job.id, url, bytes });
         const started = Date.now();
         const res = await fetch(url, { signal: AbortSignal.timeout(60000) });
         if (!res.ok || !res.body) throw new Error("speed probe failed");
@@ -155,16 +156,29 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
           read += chunk.byteLength;
           if (read >= bytes) break;
         }
-        const seconds = Math.max(0.001, (Date.now() - started) / 1000);
+        const ms = Date.now() - started;
+        const seconds = Math.max(0.001, ms / 1000);
         speed = {
           down_mbps: Math.round(((read * 8) / seconds / 1_000_000) * 10) / 10,
           up_mbps: 0,
         };
+        log("poller.speed.ok", {
+          jobId: job.id,
+          bytesRead: read,
+          ms,
+          down_mbps: speed.down_mbps,
+          up_mbps: speed.up_mbps,
+        });
         jobResults.push({ id: job.id, status: "done", result: speed });
       } else {
         jobResults.push({ id: job.id, status: "error", error: "unknown job" });
       }
     } catch (err) {
+      log("poller.job.fail", {
+        jobId: job.id,
+        kind: job.kind,
+        error: err instanceof Error ? err.message : String(err),
+      });
       jobResults.push({
         id: job.id,
         status: "error",
@@ -198,14 +212,12 @@ export async function tick(cfg: PollerConfig): Promise<void> {
         jobs: handled.jobResults,
       }),
     });
-    console.log(
-      JSON.stringify({
-        event: "tick_ok",
-        house: snapshot.house?.name,
-        jobs: (snapshot.jobs || []).length,
-        publicIp: ip?.ip ?? null,
-      }),
-    );
+    log("tick_ok", {
+      house: snapshot.house?.name,
+      jobs: (snapshot.jobs || []).length,
+      publicIp: ip?.ip ?? null,
+      speed: handled.speed ?? null,
+    });
   } finally {
     ticking = false;
   }
