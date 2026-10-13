@@ -9,6 +9,7 @@ const config: AgentConfig = {
   host: "127.0.0.1",
   pollMs: 15000,
   speedProbeBytes: 2_000_000,
+  allowRemoteUpdate: false,
 };
 
 describe("request logging", () => {

@@ -50,6 +50,9 @@ agent/
 | `UPLUS_ROUTER_URL` | no | U+ 공유기 관리 URL (U+ WOL용) |
 | `UPLUS_ROUTER_PASSWORD` | no | 공유기 비밀번호. API 응답에 절대 포함하지 않음 |
 | `HEALTHCHECK_TOKEN` | no | `useHealthToken: true`일 때 헬스 요청에 붙임 |
+| `AGENT_ALLOW_REMOTE_UPDATE` | no | `true`면 대시보드 원격 업데이트(job) 허용 |
+| `PM2_APP_NAME` | 원격갱신 시 | pm2 프로세스 이름 (예: `ops-agent`) |
+| `AGENT_REPO_DIR` | no | git pull/npm 대상 디렉터리 (기본 cwd) |
 
 샘플: [`agent/.env.example`](../agent/.env.example).  
 `.env`와 실제 비밀값은 git에 커밋하지 않습니다.
@@ -100,8 +103,12 @@ curl -sS -H "Authorization: Bearer $AGENT_TOKEN" http://127.0.0.1:3920/v1/status
 | HTTP 헬스 체크 | 동작 |
 | 요청 로그 | 모든 HTTP·job을 `received` → `processing` → `complete`/`failed` 3단계로 stdout JSON (토큰 비출력) |
 | Job poller (`JANITOR_API_URL`) | 동작 (`tick` 동시 실행 가드, 인증 poll/report) |
+| 런타임 상태 보고 | 버전·hostname·pm2·uptime을 매 tick 보고, UI 자동 표시 |
+| 원격 업데이트 | `agent_update` job → git pull + npm + `pm2 restart` (opt-in) |
 | 속도 측정 | `speed_probe` job (샘플 상한 `SPEED_PROBE_BYTES`) |
 | Proxmox 동기화 | `pve_sync` job (시크릿은 `server_secrets`, 클라이언트 RLS deny) |
+
+pm2 예시: `agent/ecosystem.config.cjs` → `pm2 start ecosystem.config.cjs`
 
 ## 관련 문서
 

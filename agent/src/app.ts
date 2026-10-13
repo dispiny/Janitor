@@ -8,6 +8,7 @@ import { log } from "./log.js";
 import { resolvePublicIp } from "./public-ip.js";
 import { tick } from "./poller.js";
 import { requestLog } from "./request-log.js";
+import { collectRuntimeStatus } from "./runtime-status.js";
 import { sendMagicPacket } from "./wol/magic-packet.js";
 import { wakeViaUplus } from "./wol/uplus.js";
 
@@ -54,15 +55,18 @@ export function createApp(config: AgentConfig) {
   app.use("/v1/*", bearerAuth(config));
 
   app.get("/v1/status", (c) => {
+    const runtime = collectRuntimeStatus(config);
     return c.json({
       ok: true,
       service: "janitor-home-agent",
       tunnelHostname: config.tunnelHostname ?? null,
+      runtime,
       capabilities: {
         wakeManual: true,
         wakeUplus: uplusReady,
         publicIp: true,
         httpCheck: true,
+        remoteUpdate: runtime.remoteUpdate,
       },
     });
   });

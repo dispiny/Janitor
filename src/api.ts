@@ -1,5 +1,6 @@
 import type { Env } from "./env";
-import { notifySlack } from "./slack";
+import { dedupeAlerts } from "./alert-dedupe";
+import { buildOpsAlert, notifySlack } from "./slack";
 import { sha256Hex, userClient } from "./supabase";
 import { createClient } from "@supabase/supabase-js";
 
@@ -194,7 +195,7 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
       if ("error" in auth && auth.error) return auth.error;
       const body = (await req.json()) as {
         houseId: string;
-        kind: "wake" | "health_all" | "health_one" | "pve_sync" | "speed_probe";
+        kind: "wake" | "health_all" | "health_one" | "pve_sync" | "speed_probe" | "agent_update";
         payload?: Record<string, unknown>;
       };
       if (!body.houseId || !body.kind) return json({ error: "잘못된 요청" }, 400);
@@ -249,8 +250,21 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
       const token = bearer(req);
       if (!token) return json({ error: "unauthorized" }, 401);
       const body = (await req.json()) as {
-        services?: Array<{ ok: boolean }>;
-        speed?: { down_mbps: number };
+        houseName?: string;
+        services?: Array<{
+          id?: string;
+          name?: string;
+          host?: string;
+          url?: string;
+          ok: boolean;
+          code?: number;
+          expect?: number;
+          ms?: number;
+          error?: string;
+          slackOnFail?: boolean;
+        }>;
+        speed?: { down_mbps: number; up_mbps?: number };
+        jobs?: Array<{ id?: string; kind?: string; status: string; error?: string }>;
       };
       const sb = anonClient(env);
       const { data, error } = await sb.rpc("agent_report", { p_token: token, p_payload: body });
@@ -259,22 +273,69 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
         return json({ error: error.message }, status);
       }
 
-      const house = (data as { house?: { slack_channel?: string; speed_threshold_mbps?: number } } | null)?.house;
+      const house = (data as {
+        house?: {
+          name?: string;
+          slack_channel?: string;
+          speed_threshold_mbps?: number;
+          alert_state?: Record<string, { since?: string; name?: string; kind?: string }>;
+        };
+      } | null)?.house;
       const channel = house?.slack_channel || "#homelab";
-      const failing = (body.services || []).filter((s) => !s.ok);
-      if (failing.length) {
-        await notifySlack(env, channel, `${failing.length}개 서비스 헬스 체크가 기대 응답이 아닙니다.`);
-      }
-      if (
+      const reportedServices = (body.services || []).map((s) => ({
+        id: s.id,
+        name: s.name || s.id || "서비스",
+        host: s.host || null,
+        url: s.url || null,
+        ok: Boolean(s.ok),
+        code: s.code ?? null,
+        expect: s.expect ?? null,
+        ms: s.ms ?? null,
+        error: s.error || null,
+        slackOnFail: s.slackOnFail !== false,
+      }));
+      const failedJobs = (body.jobs || []).filter((j) => j.status === "error");
+      const threshold = house?.speed_threshold_mbps;
+      const speedBelow =
         body.speed &&
-        house?.speed_threshold_mbps != null &&
-        Number(body.speed.down_mbps) < Number(house.speed_threshold_mbps)
-      ) {
+        threshold != null &&
+        Number(body.speed.down_mbps) < Number(threshold)
+          ? {
+              downMbps: Number(body.speed.down_mbps),
+              thresholdMbps: Number(threshold),
+              upMbps: body.speed.up_mbps != null ? Number(body.speed.up_mbps) : null,
+            }
+          : null;
+
+      const deduped = dedupeAlerts({
+        prev: house?.alert_state,
+        services: reportedServices,
+        speed: speedBelow,
+        speedReported: body.speed != null,
+        jobs: failedJobs,
+      });
+
+      if (deduped.hasFresh) {
         await notifySlack(
           env,
           channel,
-          `다운로드 ${body.speed.down_mbps} Mbps가 임계값 ${house.speed_threshold_mbps} Mbps보다 낮습니다.`,
+          buildOpsAlert({
+            houseName: body.houseName || house?.name,
+            failingServices: deduped.freshServices,
+            speed: deduped.freshSpeed,
+            failedJobs: deduped.freshJobs,
+          }),
         );
+      }
+
+      // Persist open incidents even when nothing fresh (recoveries clear keys).
+      const prevJson = JSON.stringify(house?.alert_state || {});
+      const nextJson = JSON.stringify(deduped.nextState);
+      if (prevJson !== nextJson) {
+        await sb.rpc("agent_set_alert_state", {
+          p_token: token,
+          p_state: deduped.nextState,
+        });
       }
 
       return json(data || { ok: true });
