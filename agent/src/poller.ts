@@ -2,6 +2,8 @@ import { checkHttp } from "./health-check.js";
 import type { AgentConfig } from "./config.js";
 import { resolvePublicIp } from "./public-ip.js";
 import { log } from "./log.js";
+import { collectRuntimeStatus } from "./runtime-status.js";
+import { runSelfUpdate } from "./self-update.js";
 import { sendMagicPacket } from "./wol/magic-packet.js";
 import { wakeViaUplus } from "./wol/uplus.js";
 
@@ -41,7 +43,18 @@ async function api(cfg: PollerConfig, path: string, init?: RequestInit) {
 
 async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
   const jobResults: Array<{ id: string; status: "done" | "error"; result?: unknown; error?: string }> = [];
-  const serviceResults: Array<{ id: string; ok: boolean; code: number; ms: number }> = [];
+  const serviceResults: Array<{
+    id: string;
+    name: string;
+    host?: string;
+    url?: string;
+    ok: boolean;
+    code: number;
+    expect: number;
+    ms: number;
+    error?: string;
+    slackOnFail: boolean;
+  }> = [];
   const serverUpdates: Array<{ id: string; is_on: boolean }> = [];
   const guests: Array<{
     server_id: string;
@@ -88,18 +101,25 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
             ? (snapshot.services || []).filter((s) => s.id === job.payload?.serviceId)
             : snapshot.services || [];
         for (const service of list) {
+          const expect = Number(service.expect_status || 200);
           const result = await checkHttp({
             url: String(service.health_url),
-            expectStatus: Number(service.expect_status || 200),
+            expectStatus: expect,
             authorization: cfg.healthcheckToken
               ? `Bearer ${cfg.healthcheckToken}`
               : undefined,
           });
           serviceResults.push({
             id: String(service.id),
+            name: String(service.name || service.id),
+            host: service.host_label ? String(service.host_label) : undefined,
+            url: String(service.health_url),
             ok: result.ok,
             code: result.status,
+            expect,
             ms: result.ms,
+            error: result.error,
+            slackOnFail: service.slack_on_fail !== false,
           });
         }
         jobResults.push({ id: job.id, status: "done", result: { count: serviceResults.length } });
@@ -161,6 +181,9 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
           up_mbps: 0,
         };
         jobResults.push({ id: job.id, status: "done", result: speed });
+      } else if (job.kind === "agent_update") {
+        const result = await runSelfUpdate(cfg);
+        jobResults.push({ id: job.id, status: "done", result });
       } else {
         jobResults.push({ id: job.id, status: "error", error: "unknown job" });
       }
@@ -186,16 +209,25 @@ export async function tick(cfg: PollerConfig): Promise<void> {
     const snapshot = (await api(cfg, "/api/agent/poll")) as PollSnapshot;
     const ip = await resolvePublicIp().catch(() => null);
     const handled = await handleJobs(cfg, snapshot);
+    const agentStatus = collectRuntimeStatus(cfg);
     await api(cfg, "/api/agent/report", {
       method: "POST",
       body: JSON.stringify({
+        houseName: snapshot.house?.name,
         publicIp: ip?.ip,
-        agentHostLabel: cfg.hostLabel || cfg.tunnelHostname || undefined,
+        agentHostLabel: cfg.hostLabel || cfg.tunnelHostname || agentStatus.hostname,
+        agentStatus,
         servers: handled.serverUpdates,
         services: handled.serviceResults,
         guests: handled.guests,
         speed: handled.speed,
-        jobs: handled.jobResults,
+        jobs: handled.jobResults.map((j) => ({
+          id: j.id,
+          kind: snapshot.jobs?.find((job) => job.id === j.id)?.kind,
+          status: j.status,
+          error: j.error,
+          result: j.result,
+        })),
       }),
     });
     console.log(
@@ -204,6 +236,8 @@ export async function tick(cfg: PollerConfig): Promise<void> {
         house: snapshot.house?.name,
         jobs: (snapshot.jobs || []).length,
         publicIp: ip?.ip ?? null,
+        agentVersion: agentStatus.version,
+        pm2: agentStatus.pm2,
       }),
     );
   } finally {

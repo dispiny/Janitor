@@ -12,6 +12,12 @@ export type AgentConfig = {
   hostLabel?: string;
   /** Cap for speed_probe download sample (default 2 MiB). */
   speedProbeBytes: number;
+  /** Opt-in: allow dashboard-triggered git pull + npm install + pm2 restart. */
+  allowRemoteUpdate: boolean;
+  /** pm2 process name used for remote restart (defaults to PM2_APP_NAME / process.name). */
+  pm2AppName?: string;
+  /** Repo/workdir for remote updates (defaults to process.cwd()). */
+  agentRepoDir?: string;
 };
 
 export function readConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
@@ -33,6 +39,8 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
     throw new Error("SPEED_PROBE_BYTES must be between 1000 and 5000000");
   }
 
+  const allowRemoteUpdate = /^(1|true|yes)$/i.test(env.AGENT_ALLOW_REMOTE_UPDATE?.trim() || "");
+
   return {
     token,
     port,
@@ -45,5 +53,8 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
     pollMs,
     hostLabel: env.AGENT_HOST_LABEL?.trim() || undefined,
     speedProbeBytes,
+    allowRemoteUpdate,
+    pm2AppName: env.PM2_APP_NAME?.trim() || undefined,
+    agentRepoDir: env.AGENT_REPO_DIR?.trim() || undefined,
   };
 }
