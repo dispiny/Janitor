@@ -23,6 +23,17 @@ type PollSnapshot = {
 
 let ticking = false;
 
+/** Log host+pathname only — drop query/hash so tokens in URLs are not written. */
+function safeUrlForLog(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value) return undefined;
+  try {
+    const parsed = new URL(value);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return value.split("?")[0]?.split("#")[0] || value;
+  }
+}
+
 async function api(cfg: PollerConfig, path: string, init?: RequestInit) {
   const method = init?.method || "GET";
   log("poller.api.received", { phase: "received", method, path });
@@ -120,7 +131,7 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
             ...jobBase,
             phase: "processing",
             serviceId: service.id,
-            url: service.health_url,
+            url: safeUrlForLog(service.health_url),
           });
           const result = await checkHttp({
             url: String(service.health_url),
@@ -201,8 +212,9 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
         const url =
           process.env.SPEEDTEST_URL ||
           `https://speed.cloudflare.com/__down?bytes=${bytes}`;
-        log("poller.speed.received", { ...jobBase, phase: "received", url, bytes });
-        log("poller.speed.processing", { ...jobBase, phase: "processing", url, bytes });
+        const urlForLog = safeUrlForLog(url);
+        log("poller.speed.received", { ...jobBase, phase: "received", url: urlForLog, bytes });
+        log("poller.speed.processing", { ...jobBase, phase: "processing", url: urlForLog, bytes });
         const started = Date.now();
         const res = await fetch(url, { signal: AbortSignal.timeout(60000) });
         if (!res.ok || !res.body) throw new Error("speed probe failed");
@@ -303,11 +315,8 @@ export function startPoller(cfg: PollerConfig): void {
   const loop = async () => {
     try {
       await tick(cfg);
-    } catch (err) {
-      log("tick.failed", {
-        phase: "failed",
-        message: err instanceof Error ? err.message : String(err),
-      });
+    } catch {
+      // tick() already emitted tick.failed — do not log again.
     } finally {
       setTimeout(loop, cfg.pollMs);
     }
