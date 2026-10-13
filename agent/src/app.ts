@@ -4,8 +4,10 @@ import { bearerAuth } from "./auth.js";
 import type { AgentConfig } from "./config.js";
 import { isAgentError } from "./errors.js";
 import { checkHttp } from "./health-check.js";
+import { log } from "./log.js";
 import { resolvePublicIp } from "./public-ip.js";
 import { tick } from "./poller.js";
+import { requestLog } from "./request-log.js";
 import { collectRuntimeStatus } from "./runtime-status.js";
 import { sendMagicPacket } from "./wol/magic-packet.js";
 import { wakeViaUplus } from "./wol/uplus.js";
@@ -41,6 +43,7 @@ export function createApp(config: AgentConfig) {
   const app = new Hono<AppEnv>();
   const uplusReady = Boolean(config.uplusRouterUrl && config.uplusRouterPassword);
 
+  app.use("*", requestLog());
   app.use("*", async (c, next) => {
     c.set("config", config);
     await next();
@@ -98,17 +101,31 @@ export function createApp(config: AgentConfig) {
 
     try {
       if (parsed.data.mode === "manual") {
+        log("wake.start", {
+          mode: "manual",
+          mac: parsed.data.mac,
+          broadcast: parsed.data.broadcast,
+          port: parsed.data.port,
+        });
         const result = await sendMagicPacket(parsed.data);
+        log("wake.ok", result);
         return c.json(result);
       }
 
+      log("wake.start", { mode: "uplus", device: parsed.data.device });
       const result = await wakeViaUplus({
         device: parsed.data.device,
         routerUrl: config.uplusRouterUrl,
         routerPassword: config.uplusRouterPassword,
       });
+      log("wake.ok", result);
       return c.json(result);
     } catch (error) {
+      log("wake.fail", {
+        mode: parsed.data.mode,
+        error: error instanceof Error ? error.message : "wake failed",
+        code: isAgentError(error) ? error.code : undefined,
+      });
       if (isAgentError(error)) {
         if (error.code === "UPLUS_NOT_IMPLEMENTED") {
           return c.json(
