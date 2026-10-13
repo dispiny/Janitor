@@ -29,6 +29,7 @@ test("buildOpsAlert lists failing services and speed clearly", () => {
   });
 
   assert.match(msg.text, /우리집/);
+  assert.match(msg.text, /죽은 서비스/);
   assert.match(msg.text, /Home Assistant/);
   assert.doesNotMatch(msg.text, /silent/);
   assert.match(msg.text, /42\.5/);
@@ -36,7 +37,9 @@ test("buildOpsAlert lists failing services and speed clearly", () => {
   assert.ok(Array.isArray(msg.blocks));
   assert.ok(msg.blocks.some((b) => b.type === "header"));
   const blob = JSON.stringify(msg.blocks);
-  assert.match(blob, /헬스 체크 실패/);
+  assert.match(blob, /다운된 서비스/);
+  assert.match(blob, /Home Assistant/);
+  assert.match(blob, /DOWN/);
   assert.match(blob, /회선 속도 저하/);
   assert.match(blob, /에이전트 작업 실패/);
   assert.match(blob, /HTTP 503/);

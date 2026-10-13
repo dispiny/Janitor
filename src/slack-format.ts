@@ -1,4 +1,5 @@
 export type ServiceAlert = {
+  id?: string;
   name: string;
   host?: string | null;
   url?: string | null;
@@ -11,6 +12,7 @@ export type ServiceAlert = {
 };
 
 export type JobAlert = {
+  id?: string;
   kind?: string;
   status: string;
   error?: string | null;
@@ -29,12 +31,13 @@ function truncate(text: string, max = 120): string {
 }
 
 function serviceLine(s: ServiceAlert): string {
-  const where = s.host ? ` · ${s.host}` : "";
-  const got = s.code == null ? "응답 없음" : `HTTP ${s.code}`;
-  const expect = s.expect != null ? ` (기대 ${s.expect})` : "";
+  const where = s.host ? ` (${s.host})` : "";
+  const got = s.code == null || s.code === 0 ? "응답 없음" : `HTTP ${s.code}`;
+  const expect = s.expect != null ? ` · 기대 ${s.expect}` : "";
   const ms = s.ms != null ? ` · ${s.ms}ms` : "";
-  const err = s.error ? ` · ${truncate(s.error, 80)}` : "";
-  return `• *${s.name}*${where}\n    ${got}${expect}${ms}${err}`;
+  const err = s.error ? `\n    ${truncate(s.error, 80)}` : "";
+  const url = s.url ? `\n    ${truncate(s.url, 100)}` : "";
+  return `• *${s.name}*${where} — DOWN\n    ${got}${expect}${ms}${url}${err}`;
 }
 
 /** Build a readable Slack Block Kit alert for health / speed / job failures. */
@@ -49,21 +52,33 @@ export function buildOpsAlert(input: {
   const jobs = (input.failedJobs || []).filter((j) => j.status === "error");
   const speed = input.speed || null;
 
+  const deadNames = services.map((s) => s.name).filter(Boolean);
   const problems: string[] = [];
-  if (services.length) problems.push(`헬스 ${services.length}`);
+  if (deadNames.length) problems.push(`죽은 서비스 ${deadNames.length}`);
   if (speed) problems.push("회선 저하");
-  if (jobs.length) problems.push(`작업 ${jobs.length}`);
+  if (jobs.length) problems.push(`작업 실패 ${jobs.length}`);
+
+  const deadSummary =
+    deadNames.length > 0
+      ? `*죽은 서비스:* ${deadNames.map((n) => `\`${n}\``).join(", ")}`
+      : null;
 
   const blocks: Array<Record<string, unknown>> = [
     {
       type: "header",
-      text: { type: "plain_text", text: `⚠ ${house} 문제 감지`, emoji: true },
+      text: {
+        type: "plain_text",
+        text: deadNames.length
+          ? `⚠ ${house}: ${deadNames.slice(0, 3).join(", ")}${deadNames.length > 3 ? ` 외 ${deadNames.length - 3}` : ""} DOWN`
+          : `⚠ ${house} 문제 감지`,
+        emoji: true,
+      },
     },
     {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `한눈에 볼 항목: *${problems.join(" · ") || "없음"}*`,
+        text: [deadSummary, `요약: *${problems.join(" · ") || "없음"}*`].filter(Boolean).join("\n"),
       },
     },
   ];
@@ -76,7 +91,7 @@ export function buildOpsAlert(input: {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*헬스 체크 실패 (${services.length})*\n${lines.join("\n")}`,
+        text: `*다운된 서비스 (${services.length})*\n${lines.join("\n")}`,
       },
     });
   }
@@ -120,15 +135,18 @@ export function buildOpsAlert(input: {
     elements: [
       {
         type: "mrkdwn",
-        text: `${new Date().toISOString()} · ops alert`,
+        text: `${new Date().toISOString()} · 동일 장애는 복구 전까지 다시 보내지 않음`,
       },
     ],
   });
 
-  const fallbackParts = [`[${house}] 문제: ${problems.join(", ") || "알림"}`];
-  for (const s of services.slice(0, 5)) {
+  const fallbackParts = [
+    `[${house}] ${problems.join(", ") || "알림"}`,
+    deadNames.length ? `죽은 서비스: ${deadNames.join(", ")}` : null,
+  ].filter(Boolean) as string[];
+  for (const s of services.slice(0, 8)) {
     fallbackParts.push(
-      `- ${s.name}: ${s.code == null ? "응답 없음" : `HTTP ${s.code}`}${s.expect != null ? ` (기대 ${s.expect})` : ""}`,
+      `- DOWN ${s.name}: ${s.code == null || s.code === 0 ? "응답 없음" : `HTTP ${s.code}`}${s.expect != null ? ` (기대 ${s.expect})` : ""}`,
     );
   }
   if (speed) {

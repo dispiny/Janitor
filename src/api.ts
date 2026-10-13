@@ -1,4 +1,5 @@
 import type { Env } from "./env";
+import { dedupeAlerts } from "./alert-dedupe";
 import { buildOpsAlert, notifySlack } from "./slack";
 import { sha256Hex, userClient } from "./supabase";
 import { createClient } from "@supabase/supabase-js";
@@ -273,25 +274,29 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
       }
 
       const house = (data as {
-        house?: { name?: string; slack_channel?: string; speed_threshold_mbps?: number };
+        house?: {
+          name?: string;
+          slack_channel?: string;
+          speed_threshold_mbps?: number;
+          alert_state?: Record<string, { since?: string; name?: string; kind?: string }>;
+        };
       } | null)?.house;
       const channel = house?.slack_channel || "#homelab";
-      const failingServices = (body.services || [])
-        .filter((s) => !s.ok)
-        .map((s) => ({
-          name: s.name || s.id || "서비스",
-          host: s.host || null,
-          url: s.url || null,
-          ok: false,
-          code: s.code ?? null,
-          expect: s.expect ?? null,
-          ms: s.ms ?? null,
-          error: s.error || null,
-          slackOnFail: s.slackOnFail !== false,
-        }));
+      const reportedServices = (body.services || []).map((s) => ({
+        id: s.id,
+        name: s.name || s.id || "서비스",
+        host: s.host || null,
+        url: s.url || null,
+        ok: Boolean(s.ok),
+        code: s.code ?? null,
+        expect: s.expect ?? null,
+        ms: s.ms ?? null,
+        error: s.error || null,
+        slackOnFail: s.slackOnFail !== false,
+      }));
       const failedJobs = (body.jobs || []).filter((j) => j.status === "error");
       const threshold = house?.speed_threshold_mbps;
-      const speedAlert =
+      const speedBelow =
         body.speed &&
         threshold != null &&
         Number(body.speed.down_mbps) < Number(threshold)
@@ -302,18 +307,35 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
             }
           : null;
 
-      const alertableServices = failingServices.filter((s) => s.slackOnFail !== false);
-      if (alertableServices.length || speedAlert || failedJobs.length) {
+      const deduped = dedupeAlerts({
+        prev: house?.alert_state,
+        services: reportedServices,
+        speed: speedBelow,
+        speedReported: body.speed != null,
+        jobs: failedJobs,
+      });
+
+      if (deduped.hasFresh) {
         await notifySlack(
           env,
           channel,
           buildOpsAlert({
             houseName: body.houseName || house?.name,
-            failingServices: alertableServices,
-            speed: speedAlert,
-            failedJobs,
+            failingServices: deduped.freshServices,
+            speed: deduped.freshSpeed,
+            failedJobs: deduped.freshJobs,
           }),
         );
+      }
+
+      // Persist open incidents even when nothing fresh (recoveries clear keys).
+      const prevJson = JSON.stringify(house?.alert_state || {});
+      const nextJson = JSON.stringify(deduped.nextState);
+      if (prevJson !== nextJson) {
+        await sb.rpc("agent_set_alert_state", {
+          p_token: token,
+          p_state: deduped.nextState,
+        });
       }
 
       return json(data || { ok: true });
