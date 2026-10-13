@@ -26,29 +26,23 @@ npx wrangler login          # 브라우저에서 무료 Cloudflare 계정 연결
 # Dashboard Variables 또는:
 npx wrangler secret put SUPABASE_ANON_KEY
 # SUPABASE_URL 은 Dashboard → Settings → Variables 에 설정
-npm run deploy              # → https://janitor.<your-subdomain>.workers.dev
+npm run deploy
 npx wrangler secret put SLACK_WEBHOOK_URL   # 선택
 ```
 
-### 커스텀 도메인 (`janitor.dispiny.life`)
+배포 후 URL은 wrangler 출력 / Cloudflare Dashboard에서 확인하세요. 실제 호스트명은 git에 적지 마세요.
 
-`dispiny.life`가 이 Worker와 **같은 Cloudflare 계정**에 있으면:
+### 커스텀 도메인 (선택)
 
-```bash
-npm run deploy   # wrangler.jsonc routes → janitor.dispiny.life
-```
+**Workers & Pages → (Worker) → Settings → Domains & Routes → Add → Custom Domain**
 
-또는 대시보드: **Workers & Pages → janitor → Settings → Domains & Routes → Add → Custom Domain**.
-
-DNS를 손으로 `*.workers.dev` CNAME만 걸어 두면 SSL/라우팅이 어긋날 수 있습니다. Custom Domain으로 붙이는 편이 안전합니다.  
-브라우저에서 Cloudflare 챌린지가 뜨면 해당 호스트에 Bot Fight / Under Attack을 끄거나 예외를 둡니다.
+DNS를 손으로 `*.workers.dev` CNAME만 걸면 SSL/라우팅이 어긋날 수 있어, Custom Domain으로 붙이는 편이 안전합니다.
 
 ### 2) Supabase Auth URL 맞추기
 
 Supabase 대시보드 → **Authentication → URL Configuration**
 
-- Site URL: `https://janitor.dispiny.life` (또는 `https://janitor.<your-subdomain>.workers.dev`)
-- Redirect URLs: 위 URL(들) 추가
+- Site URL / Redirect URLs: 배포한 Worker URL (또는 연결한 커스텀 도메인)
 
 **Authentication → Providers → Email → Confirm email** 을 끄면 가입 직후 바로 로그인됩니다.
 
@@ -59,8 +53,7 @@ Supabase 대시보드 → **Authentication → URL Configuration**
 ```bash
 cd agent
 cp .env.example .env
-# JANITOR_API_URL=https://janitor.<your-subdomain>.workers.dev
-# AGENT_TOKEN=콘솔 설정에서 발급한 값
+# JANITOR_API_URL / AGENT_TOKEN 은 agent/.env 에만 넣기 (.env.example 은 localhost 예시)
 npm install && npm start
 ```
 

@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "janitor",
+  "name": "ops",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-11",
   "compatibility_flags": ["nodejs_compat"],
@@ -20,11 +20,9 @@
   // Public project URL only — never commit SUPABASE_ANON_KEY here.
   "vars": {
     "SUPABASE_URL": "https://ypklxfwpbyroxdolgiun.supabase.co"
-  },
-  // Custom hostname (zone must be on the same Cloudflare account as this Worker)
-  "routes": [
-    { "pattern": "janitor.dispiny.life", "custom_domain": true }
-  ]
+  }
+  // Optional custom domain: Dashboard → Workers → ops → Domains & Routes
+  // (do not commit personal hostnames here)
   // Secrets (not committed):
   //   wrangler secret put SUPABASE_ANON_KEY
   //   wrangler secret put SLACK_WEBHOOK_URL   # optional
