@@ -38,7 +38,7 @@ jobs:
             fi
           done
           if [[ "$failed" -ne 0 ]]; then
-            echo "Remove personal hostnames. Use placeholders like ops.<your-subdomain>.workers.dev, and attach custom domains only in the Cloudflare dashboard."
+            echo "Remove personal hostnames. Use localhost placeholders in *.example files; put real URLs only in untracked .env / .dev.vars."
             exit 1
           fi
           echo "OK: no banned personal hostnames in tracked files."

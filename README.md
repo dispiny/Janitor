@@ -55,8 +55,7 @@ Supabase 대시보드 → **Authentication → URL Configuration**
 ```bash
 cd agent
 cp .env.example .env
-# JANITOR_API_URL=https://ops.<your-subdomain>.workers.dev
-# AGENT_TOKEN=콘솔 설정에서 발급한 값
+# JANITOR_API_URL / AGENT_TOKEN 은 agent/.env 에만 넣기 (.env.example 은 localhost 예시)
 npm install && npm start
 ```
 
