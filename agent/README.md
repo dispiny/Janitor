@@ -15,10 +15,13 @@
 
 ```bash
 cd agent
-cp .env.example .env   # AGENT_TOKEN 설정
+cp .env.example .env   # AGENT_TOKEN=... 한 줄 넣기
 npm install
 npm test
 npm start
 ```
+
+기동 시 `agent/.env`를 자동으로 읽습니다.  
+당장 안 되면 `AGENT_TOKEN=값 npm start`로도 됩니다.
 
 기본 포트 `3920`. `/v1/*`는 `Authorization: Bearer $AGENT_TOKEN` 필요.

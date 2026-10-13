@@ -65,6 +65,22 @@ npm test
 npm start
 ```
 
+`npm start` / `npm run dev`는 기동 시 프로젝트 루트의 `.env`를 읽습니다.  
+이미 셸에보낸 환경 변수가 있으면 그쪽이 우선입니다.
+
+`.env` 예 (따옴표·`export` 없이 적어도 됩니다):
+
+```bash
+AGENT_TOKEN=여기에-긴-비밀값
+PORT=3920
+```
+
+`AGENT_TOKEN is required`가 나오면:
+
+1. `.env`가 **`agent/` 폴더 안**에 있는지 (`agent/.env`)
+2. 내용이 `AGENT_TOKEN=값` 한 줄인지 (앞에 공백/한글 키 이름 없는지)
+3. 임시로 `AGENT_TOKEN=값 npm start` 로도 뜨는지
+
 개발 중 재시작이 필요하면 `npm run dev` (`tsx watch`).
 
 스모크 예:
