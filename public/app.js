@@ -337,6 +337,104 @@ function latestSpeed() {
   return state.speeds.length ? state.speeds[state.speeds.length - 1] : null;
 }
 
+function agentStatus(house = state.house) {
+  return house?.agent_status && typeof house.agent_status === "object" ? house.agent_status : {};
+}
+
+function isAgentConnected(house = state.house) {
+  return Boolean(house?.agent_last_seen_at) &&
+    Date.now() - new Date(house.agent_last_seen_at).getTime() < 5 * 60_000;
+}
+
+function formatUptime(sec) {
+  const n = Number(sec);
+  if (!Number.isFinite(n) || n < 0) return "—";
+  if (n < 60) return `${Math.floor(n)}초`;
+  if (n < 3600) return `${Math.floor(n / 60)}분`;
+  if (n < 86400) return `${Math.floor(n / 3600)}시간`;
+  return `${Math.floor(n / 86400)}일`;
+}
+
+function renderAgents() {
+  const host = $("dash-agents");
+  if (!host) return;
+  host.innerHTML = "";
+  const house = state.house;
+  if (!house?.agent_token_hash && !house?.agent_last_seen_at) {
+    const empty = document.createElement("p");
+    empty.className = "sub";
+    empty.textContent = "아직 등록된 에이전트가 없습니다. 설정에서 토큰을 발급해 pm2로 실행하세요.";
+    host.appendChild(empty);
+    return;
+  }
+
+  const status = agentStatus(house);
+  const online = isAgentConnected(house);
+  const card = document.createElement("article");
+  card.className = "card server";
+  card.innerHTML = `
+    <div class="server-top">
+      <div>
+        <h3></h3>
+        <p class="sub"></p>
+      </div>
+      <span class="badge"></span>
+    </div>
+    <div class="kv"></div>
+    <div class="row-actions"></div>
+  `;
+  const title = status.hostname || house.agent_host_label || "집 에이전트";
+  card.querySelector("h3").textContent = title;
+  card.querySelector(".sub").textContent = online
+    ? `온라인 · v${status.version || "?"} · ${status.pm2 ? "pm2" : "process"}`
+    : "오프라인 · 마지막 폴링 이후 응답 없음";
+  const badge = card.querySelector(".badge");
+  badge.textContent = online ? "온라인" : "오프라인";
+  badge.classList.add(online ? "on" : "off");
+
+  const kv = card.querySelector(".kv");
+  const rows = [
+    ["마지막 응답", house.agent_last_seen_at ? relativeTime(house.agent_last_seen_at) : "—"],
+    ["버전", status.version || "—"],
+    ["Node", status.node || "—"],
+    ["가동", formatUptime(status.uptimeSec)],
+    ["pm2", status.pm2 ? (status.pm2Name || "예") : "아니오"],
+    ["원격 업데이트", status.remoteUpdate ? "가능" : "꺼짐"],
+  ];
+  for (const [label, value] of rows) {
+    const row = document.createElement("div");
+    row.className = "kv-row";
+    row.innerHTML = "<span></span><b></b>";
+    row.querySelector("span").textContent = label;
+    row.querySelector("b").textContent = value;
+    kv.appendChild(row);
+  }
+
+  const actions = card.querySelector(".row-actions");
+  const updateBtn = document.createElement("button");
+  updateBtn.type = "button";
+  updateBtn.className = "primary";
+  updateBtn.textContent = "원격 업데이트";
+  updateBtn.disabled = !online || !status.remoteUpdate;
+  updateBtn.addEventListener("click", () => enqueueAgentUpdate());
+  actions.appendChild(updateBtn);
+  host.appendChild(card);
+}
+
+async function enqueueAgentUpdate() {
+  if (!state.house) return;
+  if (!isAgentConnected()) {
+    showToast("에이전트가 오프라인입니다.");
+    return;
+  }
+  if (!agentStatus().remoteUpdate) {
+    showToast("에이전트에서 AGENT_ALLOW_REMOTE_UPDATE=true 가 필요합니다.");
+    return;
+  }
+  await enqueueJob("agent_update");
+  showToast("업데이트 작업을 넣었습니다. 잠시 후 상태가 갱신됩니다.");
+}
+
 function render() {
   if (!state.house) return;
   const house = state.house;
@@ -345,8 +443,8 @@ function render() {
   const down = latest ? Number(latest.down_mbps) : null;
   const up = latest ? Number(latest.up_mbps) : null;
   const dropped = down != null && down < threshold;
-  const agentConnected = Boolean(house.agent_last_seen_at) &&
-    Date.now() - new Date(house.agent_last_seen_at).getTime() < 5 * 60_000;
+  const agentConnected = isAgentConnected(house);
+  const status = agentStatus(house);
 
   $("house-name").textContent = house.name;
   $("dash-title").textContent = house.name;
@@ -355,7 +453,22 @@ function render() {
   $("public-ip").textContent = house.public_ip || "—";
   $("public-ip-meta").textContent = relativeTime(house.public_ip_checked_at);
   $("agent-seen").textContent = house.agent_last_seen_at ? relativeTime(house.agent_last_seen_at) : "미연결";
-  $("agent-status").textContent = house.agent_host_label || (agentConnected ? "연결됨" : "미연결");
+  $("agent-version").textContent = status.version || "—";
+  $("agent-host").textContent = status.hostname || house.agent_host_label || "—";
+  $("agent-status").textContent = agentConnected
+    ? (status.hostname || house.agent_host_label || "연결됨")
+    : "미연결";
+  $("agent-online").textContent = agentConnected ? "온라인" : "오프라인";
+  $("agent-seen-settings").textContent = house.agent_last_seen_at ? relativeTime(house.agent_last_seen_at) : "—";
+  $("agent-version-settings").textContent = status.version || "—";
+  $("agent-host-settings").textContent = status.hostname || house.agent_host_label || "—";
+  $("agent-runtime").textContent = status.node
+    ? `${status.node} · ${status.platform}/${status.arch} · ${formatUptime(status.uptimeSec)}`
+    : "—";
+  $("agent-pm2").textContent = status.pm2
+    ? (status.pm2Name ? `예 (${status.pm2Name})` : "예")
+    : (status.reportedAt ? "아니오" : "—");
+  $("agent-remote-update").textContent = status.remoteUpdate ? "가능" : "꺼짐";
   $("net-status").textContent = agentConnected ? "에이전트 연결됨" : "에이전트 대기";
   $("net-dot").style.background = agentConnected ? "#12a150" : "#948e84";
   $("dash-down").textContent = down == null ? "—" : down.toFixed(1);
@@ -364,8 +477,18 @@ function render() {
   $("speed-up").textContent = up == null ? "—" : up.toFixed(1);
   $("threshold").value = String(threshold);
   $("slack-channel").value = house.slack_channel || "#homelab";
-  $("agent-url").value = house.agent_url || "";
-  $("agent-host-label").value = house.agent_host_label || "";
+  if (document.activeElement !== $("agent-url")) {
+    $("agent-url").value = house.agent_url || "";
+  }
+  if (document.activeElement !== $("agent-host-label")) {
+    $("agent-host-label").value = house.agent_host_label || status.hostname || "";
+  }
+  const updateEnabled = agentConnected && Boolean(status.remoteUpdate);
+  ["agent-update", "agent-update-dash"].forEach((id) => {
+    const btn = $(id);
+    if (btn) btn.disabled = !updateEnabled;
+  });
+  renderAgents();
   $("dash-threshold").textContent = down == null
     ? `임계값 ${threshold} Mbps · 측정 대기`
     : dropped
@@ -774,6 +897,17 @@ async function init() {
     showToast("에이전트 토큰을 발급했습니다.");
     await refresh();
   });
+
+  $("agent-refresh")?.addEventListener("click", () => refresh());
+  $("agent-update")?.addEventListener("click", () => enqueueAgentUpdate());
+  $("agent-update-dash")?.addEventListener("click", () => enqueueAgentUpdate());
+
+  // Keep agent/online status fresh while the console is open.
+  clearInterval(init._agentTimer);
+  init._agentTimer = setInterval(() => {
+    if (!state.session || !state.house) return;
+    refresh().catch(() => {});
+  }, 30_000);
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {

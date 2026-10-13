@@ -1,6 +1,8 @@
 import { checkHttp } from "./health-check.js";
 import type { AgentConfig } from "./config.js";
 import { resolvePublicIp } from "./public-ip.js";
+import { collectRuntimeStatus } from "./runtime-status.js";
+import { runSelfUpdate } from "./self-update.js";
 import { sendMagicPacket } from "./wol/magic-packet.js";
 import { wakeViaUplus } from "./wol/uplus.js";
 
@@ -153,6 +155,9 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
           up_mbps: 0,
         };
         jobResults.push({ id: job.id, status: "done", result: speed });
+      } else if (job.kind === "agent_update") {
+        const result = await runSelfUpdate(cfg);
+        jobResults.push({ id: job.id, status: "done", result });
       } else {
         jobResults.push({ id: job.id, status: "error", error: "unknown job" });
       }
@@ -178,11 +183,13 @@ export async function tick(cfg: PollerConfig): Promise<void> {
     const snapshot = (await api(cfg, "/api/agent/poll")) as PollSnapshot;
     const ip = await resolvePublicIp().catch(() => null);
     const handled = await handleJobs(cfg, snapshot);
+    const agentStatus = collectRuntimeStatus(cfg);
     await api(cfg, "/api/agent/report", {
       method: "POST",
       body: JSON.stringify({
         publicIp: ip?.ip,
-        agentHostLabel: cfg.hostLabel || cfg.tunnelHostname || undefined,
+        agentHostLabel: cfg.hostLabel || cfg.tunnelHostname || agentStatus.hostname,
+        agentStatus,
         servers: handled.serverUpdates,
         services: handled.serviceResults,
         guests: handled.guests,
@@ -196,6 +203,8 @@ export async function tick(cfg: PollerConfig): Promise<void> {
         house: snapshot.house?.name,
         jobs: (snapshot.jobs || []).length,
         publicIp: ip?.ip ?? null,
+        agentVersion: agentStatus.version,
+        pm2: agentStatus.pm2,
       }),
     );
   } finally {

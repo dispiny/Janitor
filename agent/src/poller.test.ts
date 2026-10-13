@@ -13,6 +13,7 @@ test("tick is a no-op reentry guard when already running", async () => {
         janitorApiUrl: "http://127.0.0.1:9",
         pollMs: 1000,
         speedProbeBytes: 1000,
+        allowRemoteUpdate: false,
       }),
     /fetch|ECONNREFUSED|failed|error|9/i,
   );

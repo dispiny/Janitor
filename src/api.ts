@@ -194,7 +194,7 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
       if ("error" in auth && auth.error) return auth.error;
       const body = (await req.json()) as {
         houseId: string;
-        kind: "wake" | "health_all" | "health_one" | "pve_sync" | "speed_probe";
+        kind: "wake" | "health_all" | "health_one" | "pve_sync" | "speed_probe" | "agent_update";
         payload?: Record<string, unknown>;
       };
       if (!body.houseId || !body.kind) return json({ error: "잘못된 요청" }, 400);

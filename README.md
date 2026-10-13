@@ -96,7 +96,7 @@ npm run dev
 - `POST /api/bootstrap` — 집 생성 (가입 직후)
 - `POST /api/servers` / `DELETE /api/servers/:id`
 - `POST /api/services` / `DELETE /api/services/:id`
-- `POST /api/jobs` — 인증된 작업 큐 enqueue (에이전트는 poll로 소비; 무인증 push 없음)
+- `POST /api/jobs` — 인증된 작업 큐 enqueue (`wake`, `health_*`, `pve_sync`, `speed_probe`, `agent_update`)
 - `POST /api/agent/token` — 에이전트 토큰 발급 (해시만 DB 저장)
 - `GET /api/agent/poll` / `POST /api/agent/report` — 에이전트 Bearer 전용
 
