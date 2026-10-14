@@ -6,6 +6,7 @@ import { collectRuntimeStatus } from "./runtime-status.js";
 import { runSelfUpdate } from "./self-update.js";
 import { runSpeedTest } from "./speedtest.js";
 import { assertAllowedHttpUrl } from "./url-guard.js";
+import { scheduledKinds } from "./schedule.js";
 import { sendMagicPacket } from "./wol/magic-packet.js";
 export type PollerConfig = AgentConfig & {
   janitorApiUrl: string;
@@ -14,12 +15,45 @@ export type PollerConfig = AgentConfig & {
 };
 
 type PollSnapshot = {
-  house: { id: string; name: string; speed_threshold_mbps: number; slack_channel: string };
-  jobs: Array<{ id: string; kind: string; payload?: Record<string, unknown> }>;
+  house: {
+    id: string;
+    name: string;
+    speed_threshold_mbps: number;
+    slack_channel: string;
+    health_interval_sec?: number;
+    pve_interval_sec?: number;
+    speed_interval_sec?: number;
+    public_ip_interval_sec?: number;
+    public_ip_checked_at?: string | null;
+    last_speed_at?: string | null;
+    last_pve_at?: string | null;
+  };
+  jobs: Array<{ id?: string; kind: string; payload?: Record<string, unknown> }>;
   servers: Array<Record<string, unknown>>;
   services: Array<Record<string, unknown>>;
   secrets: Record<string, string>;
 };
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isPersistedJobId(id: unknown): id is string {
+  return typeof id === "string" && UUID_RE.test(id);
+}
+
+function withScheduledJobs(snapshot: PollSnapshot): PollSnapshot {
+  const pending = (snapshot.jobs || []).map((j) => j.kind);
+  const hasPve = (snapshot.servers || []).some((s) => s.pve_enabled);
+  const due = scheduledKinds({
+    house: snapshot.house || {},
+    services: (snapshot.services || []) as Array<{ last_checked_at?: string | null }>,
+    hasPve,
+    pendingKinds: pending,
+  });
+  if (!due.length) return snapshot;
+  const scheduled = due.map((kind) => ({ id: `sched-${kind}`, kind, payload: { scheduled: true } }));
+  log("poller.schedule", { phase: "due", kinds: due });
+  return { ...snapshot, jobs: [...(snapshot.jobs || []), ...scheduled] };
+}
 
 let ticking = false;
 
@@ -95,9 +129,18 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
     vmid?: number;
   }> = [];
   let speed: { down_mbps: number; up_mbps: number } | undefined;
+  let publicIp: string | undefined;
+
+  const finishJob = (
+    job: { id?: string },
+    entry: { status: "done" | "error"; result?: unknown; error?: string },
+  ) => {
+    if (!isPersistedJobId(job.id)) return;
+    jobResults.push({ id: job.id, ...entry });
+  };
 
   for (const job of snapshot.jobs || []) {
-    const jobBase = { jobId: job.id, kind: job.kind };
+    const jobBase = { jobId: job.id, kind: job.kind, scheduled: Boolean(job.payload?.scheduled) };
     log("poller.job.received", { ...jobBase, phase: "received", payload: job.payload });
     log("poller.job.processing", { ...jobBase, phase: "processing" });
     const jobStarted = performance.now();
@@ -123,7 +166,7 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
         });
         log("poller.wake.complete", { ...jobBase, phase: "complete", ...result });
         serverUpdates.push({ id: String(server.id), is_on: true });
-        jobResults.push({ id: job.id, status: "done", result: { mode } });
+        finishJob(job, { status: "done", result: { mode } });
       } else if (job.kind === "health_one" || job.kind === "health_all") {
         const list =
           job.kind === "health_one"
@@ -188,7 +231,7 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
             slackOnFail: service.slack_on_fail !== false,
           });
         }
-        jobResults.push({ id: job.id, status: "done", result: { count: serviceResults.length } });
+        finishJob(job, { status: "done", result: { count: serviceResults.length } });
       } else if (job.kind === "pve_sync") {
         for (const server of snapshot.servers || []) {
           if (!server.pve_enabled) continue;
@@ -249,7 +292,12 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
             guests: guests.filter((g) => g.server_id === String(server.id)).length,
           });
         }
-        jobResults.push({ id: job.id, status: "done", result: { guests: guests.length } });
+        finishJob(job, { status: "done", result: { guests: guests.length } });
+      } else if (job.kind === "public_ip") {
+        const result = await resolvePublicIp();
+        publicIp = result.ip;
+        log("poller.public_ip.complete", { ...jobBase, phase: "complete", ip: result.ip, source: result.source });
+        finishJob(job, { status: "done", result });
       } else if (job.kind === "speed_probe") {
         log("poller.speed.received", {
           ...jobBase,
@@ -274,10 +322,10 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
           phase: "complete",
           ...result,
         });
-        jobResults.push({ id: job.id, status: "done", result });
+        finishJob(job, { status: "done", result });
       } else if (job.kind === "agent_update") {
         const result = await runSelfUpdate(cfg);
-        jobResults.push({ id: job.id, status: "done", result });
+        finishJob(job, { status: "done", result });
       } else {
         throw new Error("unknown job");
       }
@@ -295,15 +343,11 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
         ms: Math.round(performance.now() - jobStarted),
         error: message,
       });
-      jobResults.push({
-        id: job.id,
-        status: "error",
-        error: message,
-      });
+      finishJob(job, { status: "error", error: message });
     }
   }
 
-  return { jobResults, serviceResults, serverUpdates, guests, speed };
+  return { jobResults, serviceResults, serverUpdates, guests, speed, publicIp };
 }
 
 export async function tick(cfg: PollerConfig): Promise<void> {
@@ -316,35 +360,36 @@ export async function tick(cfg: PollerConfig): Promise<void> {
   log("tick.processing", { phase: "processing" });
   const started = performance.now();
   try {
-    const snapshot = (await api(cfg, "/api/agent/poll")) as PollSnapshot;
-    const ip = await resolvePublicIp().catch(() => null);
+    const snapshot = withScheduledJobs((await api(cfg, "/api/agent/poll")) as PollSnapshot);
     const handled = await handleJobs(cfg, snapshot);
     const agentStatus = collectRuntimeStatus(cfg);
+    const reportBody: Record<string, unknown> = {
+      houseName: snapshot.house?.name,
+      agentHostLabel: cfg.hostLabel || cfg.tunnelHostname || agentStatus.hostname,
+      agentStatus,
+      servers: handled.serverUpdates,
+      services: handled.serviceResults,
+      guests: handled.guests,
+      jobs: handled.jobResults.map((j) => ({
+        id: j.id,
+        kind: snapshot.jobs?.find((job) => job.id === j.id)?.kind,
+        status: j.status,
+        error: j.error,
+        result: j.result,
+      })),
+    };
+    // Only refresh public IP when the schedule (or an explicit job) asked for it.
+    if (handled.publicIp) reportBody.publicIp = handled.publicIp;
+    if (handled.speed) reportBody.speed = handled.speed;
     await api(cfg, "/api/agent/report", {
       method: "POST",
-      body: JSON.stringify({
-        houseName: snapshot.house?.name,
-        publicIp: ip?.ip,
-        agentHostLabel: cfg.hostLabel || cfg.tunnelHostname || agentStatus.hostname,
-        agentStatus,
-        servers: handled.serverUpdates,
-        services: handled.serviceResults,
-        guests: handled.guests,
-        speed: handled.speed,
-        jobs: handled.jobResults.map((j) => ({
-          id: j.id,
-          kind: snapshot.jobs?.find((job) => job.id === j.id)?.kind,
-          status: j.status,
-          error: j.error,
-          result: j.result,
-        })),
-      }),
+      body: JSON.stringify(reportBody),
     });
     log("tick.complete", {
       phase: "complete",
       house: snapshot.house?.name,
       jobs: (snapshot.jobs || []).length,
-      publicIp: ip?.ip ?? null,
+      publicIp: handled.publicIp ?? null,
       speed: handled.speed ?? null,
       agentVersion: agentStatus.version,
       pm2: agentStatus.pm2,

@@ -545,6 +545,22 @@ function render() {
   $("speed-up").textContent = up == null ? "—" : up.toFixed(1);
   $("threshold").value = String(threshold);
   $("slack-channel").value = house.slack_channel || "#homelab";
+  const mins = (sec, fallback) => {
+    const n = Number(sec);
+    return String(Number.isFinite(n) ? Math.round(n / 60) : fallback);
+  };
+  if (document.activeElement !== $("interval-health")) {
+    $("interval-health").value = mins(house.health_interval_sec, 5);
+  }
+  if (document.activeElement !== $("interval-pve")) {
+    $("interval-pve").value = mins(house.pve_interval_sec, 15);
+  }
+  if (document.activeElement !== $("interval-speed")) {
+    $("interval-speed").value = mins(house.speed_interval_sec, 60);
+  }
+  if (document.activeElement !== $("interval-public-ip")) {
+    $("interval-public-ip").value = mins(house.public_ip_interval_sec, 120);
+  }
   if (document.activeElement !== $("agent-url")) {
     $("agent-url").value = house.agent_url || "";
   }
@@ -979,16 +995,26 @@ async function init() {
     }
     const threshold = Number($("threshold").value);
     const channel = $("slack-channel").value.trim() || "#homelab";
+    const toSec = (id, fallbackMin) => {
+      const raw = Number($(id).value);
+      const mins = Number.isFinite(raw) ? Math.max(0, Math.min(10080, Math.floor(raw))) : fallbackMin;
+      $(id).value = String(mins);
+      return mins * 60;
+    };
     const { error } = await state.sb.from("houses").update({
       speed_threshold_mbps: threshold,
       slack_channel: channel,
+      health_interval_sec: toSec("interval-health", 5),
+      pve_interval_sec: toSec("interval-pve", 15),
+      speed_interval_sec: toSec("interval-speed", 60),
+      public_ip_interval_sec: toSec("interval-public-ip", 120),
       updated_at: new Date().toISOString(),
     }).eq("id", state.house.id);
     if (error) {
       showToast(error.message);
       return;
     }
-    showToast("속도 알림 설정을 저장했습니다.");
+    showToast("임계값·자동 확인 주기를 저장했습니다.");
     await refresh();
   });
 
