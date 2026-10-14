@@ -20,6 +20,8 @@ export type PveSyncInput = {
 
 export type PveSyncResult = {
   nodes: string[];
+  /** Only set when nodes were discovered from the API (no node filter). */
+  discovered?: Array<{ node: string; online: boolean }>;
   guests: PveGuest[];
 };
 
@@ -45,14 +47,16 @@ export async function syncPveGuests(input: PveSyncInput): Promise<PveSyncResult>
   const headers = { Authorization: `PVEAPIToken=${input.tokenId}=${input.tokenSecret}` };
 
   let nodeNames: string[];
+  let discovered: PveSyncResult["discovered"];
   const filter = input.nodeFilter?.trim();
   if (filter) {
     nodeNames = [filter];
   } else {
     const nodesBody = await pveJson<NodesResponse>(`${base}/api2/json/nodes`, headers, fetchImpl, timeoutMs);
-    nodeNames = (nodesBody?.data || [])
-      .map((n) => n.node)
-      .filter((n): n is string => Boolean(n));
+    discovered = (nodesBody?.data || [])
+      .filter((n): n is { node: string; status?: string } => Boolean(n.node))
+      .map((n) => ({ node: n.node, online: n.status === "online" }));
+    nodeNames = discovered.map((n) => n.node);
     if (!nodeNames.length) {
       throw new Error("Proxmox API returned no nodes — check the URL and API token privileges");
     }
@@ -87,5 +91,5 @@ export async function syncPveGuests(input: PveSyncInput): Promise<PveSyncResult>
     }
   }
 
-  return { nodes: nodeNames, guests };
+  return { nodes: nodeNames, discovered, guests };
 }

@@ -132,6 +132,7 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
     vmid?: number;
   }> = [];
   const guestSyncServerIds: string[] = [];
+  const pveNodes: Array<{ server_id: string; nodes: Array<{ node: string; online: boolean }> }> = [];
   let speed: { down_mbps: number; up_mbps: number } | undefined;
   let publicIp: string | undefined;
 
@@ -269,6 +270,7 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
           });
           guestSyncServerIds.push(String(server.id));
           guests.push(...synced.guests);
+          if (synced.discovered) pveNodes.push({ server_id: String(server.id), nodes: synced.discovered });
           log("poller.pve.complete", {
             ...jobBase,
             phase: "complete",
@@ -335,7 +337,7 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
     }
   }
 
-  return { jobResults, serviceResults, serverUpdates, guests, guestSyncServerIds, speed, publicIp };
+  return { jobResults, serviceResults, serverUpdates, guests, guestSyncServerIds, pveNodes, speed, publicIp };
 }
 
 export async function tick(cfg: PollerConfig): Promise<void> {
@@ -359,6 +361,7 @@ export async function tick(cfg: PollerConfig): Promise<void> {
       services: handled.serviceResults,
       guests: handled.guests,
       guestSyncServerIds: handled.guestSyncServerIds,
+      pveNodes: handled.pveNodes,
       jobs: handled.jobResults.map((j) => ({
         id: j.id,
         kind: snapshot.jobs?.find((job) => job.id === j.id)?.kind,
