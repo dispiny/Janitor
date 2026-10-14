@@ -6,9 +6,11 @@
  *   CLOUDFLARE_API_TOKEN=...
  *   CLOUDFLARE_CUSTOM_DOMAIN=ops.example.com   # optional
  *   CLOUDFLARE_ZONE_NAME=example.com           # optional, with custom domain
+ *
+ * Writes a temporary config next to the repo root (not under /tmp) so wrangler
+ * resolves `main` / `assets.directory` relative to the project.
  */
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, writeFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -51,11 +53,11 @@ if (domain) {
   console.log(JSON.stringify({ event: "deploy.routes", domain, zone }));
 }
 
-const dir = await mkdtemp(join(tmpdir(), "janitor-deploy-"));
-const cfgPath = join(dir, "wrangler.json");
+// Must live in the project root — wrangler resolves entry/assets relative to the config file.
+const cfgPath = join(root, ".wrangler.deploy.json");
 try {
-  await writeFile(cfgPath, JSON.stringify(config, null, 2));
+  await writeFile(cfgPath, `${JSON.stringify(config, null, 2)}\n`);
   await run("npx", ["wrangler", "deploy", "--config", cfgPath, "--keep-vars"], root);
 } finally {
-  await rm(dir, { recursive: true, force: true });
+  await unlink(cfgPath).catch(() => undefined);
 }
