@@ -175,6 +175,7 @@ __marimo__/
 node_modules/
 .dev.vars
 .wrangler/
+.wrangler.deploy.json
 dist/
 agent/node_modules/
 agent/dist/
