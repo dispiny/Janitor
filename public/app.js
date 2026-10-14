@@ -649,17 +649,10 @@ async function init() {
     ? "웹훅이 Worker에 설정되어 있습니다."
     : "웹훅이 아직 없습니다. wrangler secret put SLACK_WEBHOOK_URL";
 
-  const bootstrap = Boolean(state.config.bootstrapAllowed);
-  $("signup-house-field").hidden = !bootstrap;
-  $("signup-house").required = bootstrap;
-  let signupHint = bootstrap
-    ? "아직 계정이 없어 첫 집 주인을 만들 수 있습니다. 이후에는 초대받은 이메일만 가입됩니다."
-    : "설정에서 초대한 이메일만 가입됩니다. 아무나 계정을 만들 수 없습니다.";
   if (state.config.inviteOnly && !state.config.inviteHookReady) {
-    signupHint +=
-      " ⚠ Supabase Auth Hook(Before User Created → hook_invite_only_signup)이 아직 연결되지 않았을 수 있습니다. 대시보드에서 활성화하세요.";
+    $("login-hint").textContent =
+      "회원가입은 없습니다. Supabase에서 사용자를 만든 뒤 로그인하세요. ⚠ Auth Hook(Before User Created → hook_invite_only_signup)이 연결되지 않았을 수 있습니다.";
   }
-  $("signup-hint").textContent = signupHint;
 
   state.sb = createClient(state.config.supabaseUrl, state.config.supabaseAnonKey, {
     auth: { persistSession: true, autoRefreshToken: true },
@@ -680,21 +673,6 @@ async function init() {
     }
   });
 
-  $("tab-login").addEventListener("click", () => {
-    $("tab-login").setAttribute("aria-selected", "true");
-    $("tab-signup").setAttribute("aria-selected", "false");
-    $("panel-login").hidden = false;
-    $("panel-signup").hidden = true;
-    $("auth-title").textContent = "로그인";
-  });
-  $("tab-signup").addEventListener("click", () => {
-    $("tab-signup").setAttribute("aria-selected", "true");
-    $("tab-login").setAttribute("aria-selected", "false");
-    $("panel-signup").hidden = false;
-    $("panel-login").hidden = true;
-    $("auth-title").textContent = "초대 가입";
-  });
-
   $("panel-login").addEventListener("submit", async (event) => {
     event.preventDefault();
     $("login-error").textContent = "";
@@ -707,42 +685,6 @@ async function init() {
     }
     state.session = data.session;
     await enterApp();
-  });
-
-  $("panel-signup").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    $("signup-error").textContent = "";
-    const email = $("signup-email").value.trim();
-    const password = $("signup-password").value;
-    const bootstrap = Boolean(state.config?.bootstrapAllowed);
-    const houseName = $("signup-house").value.trim();
-    if (bootstrap && !houseName) {
-      $("signup-error").textContent = "첫 계정은 집 이름이 필요합니다.";
-      return;
-    }
-    const { data, error } = await state.sb.auth.signUp({ email, password });
-    if (error) {
-      $("signup-error").textContent = error.message.includes("초대")
-        ? error.message
-        : (error.message || "가입이 거부되었습니다. 초대받은 이메일인지 확인하세요.");
-      return;
-    }
-    if (!data.session) {
-      $("signup-error").textContent = "이메일 확인이 필요합니다. 받은편지함을 확인한 뒤 로그인해 주세요.";
-      return;
-    }
-    state.session = data.session;
-    if (bootstrap) {
-      await api("/api/bootstrap", {
-        method: "POST",
-        body: JSON.stringify({ houseName }),
-      });
-      await enterApp();
-      showToast(`${houseName} 을 만들었습니다. 이후 가입은 초대만 가능합니다.`);
-      return;
-    }
-    await enterApp();
-    showToast("가입했습니다. 초대된 집으로 합류합니다.");
   });
 
   $("logout").addEventListener("click", async () => {
@@ -875,7 +817,7 @@ async function init() {
         body: JSON.stringify({ houseId: state.house.id, email }),
       });
       $("invite-email").value = "";
-      showToast(`${email} 초대를 저장했습니다. 상대방이 같은 이메일로 로그인하면 합류합니다.`);
+      showToast(`${email} 을 허용 목록에 넣었습니다. Supabase에서 사용자를 만든 뒤 로그인하면 합류합니다.`);
       await refresh();
     } catch (err) {
       showToast(err.message);

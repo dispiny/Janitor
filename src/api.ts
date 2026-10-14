@@ -40,6 +40,8 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
         inviteOnly?: boolean;
         bootstrapAllowed?: boolean;
         hookReady?: boolean;
+        adminProvisionedOnly?: boolean;
+        signupEnabled?: boolean;
       };
       return json({
         supabaseUrl: env.SUPABASE_URL,
@@ -48,6 +50,8 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
         inviteOnly: status.inviteOnly !== false,
         bootstrapAllowed: Boolean(status.bootstrapAllowed),
         inviteHookReady: Boolean(status.hookReady),
+        adminProvisionedOnly: status.adminProvisionedOnly !== false,
+        signupEnabled: Boolean(status.signupEnabled),
       });
     }
 
@@ -348,13 +352,13 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
       const email = body.email?.trim().toLowerCase();
       if (!body.houseId || !email?.includes("@")) return json({ error: "이메일이 필요합니다." }, 400);
 
-      const { error } = await auth.sb!.from("house_invites").upsert({
-        house_id: body.houseId,
-        email,
-        invited_by: auth.user!.id,
-      }, { onConflict: "house_id,email" });
+      // Allowlist + house invite; Auth user must still be created in Supabase Dashboard.
+      const { error } = await auth.sb!.rpc("invite_house_member", {
+        p_house_id: body.houseId,
+        p_email: email,
+      });
       if (error) return json({ error: error.message }, 400);
-      return json({ ok: true, email, pending: true });
+      return json({ ok: true, email, pending: true, provisionAllowlisted: true });
     }
 
     return json({ error: "not found" }, 404);
