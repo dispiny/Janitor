@@ -40,9 +40,37 @@ async function requireHouseOwner(
 
 const JOB_KINDS = new Set(["wake", "health_all", "health_one", "pve_sync", "speed_probe", "agent_update"]);
 
-/** Prefer service role (SEC-10); fall back to anon until revoke migration is applied. */
-function agentDb(env: Env): SupabaseClient {
-  return serviceClient(env) ?? anonClient(env);
+/**
+ * Agent poll/report RPCs are service_role-only (anon EXECUTE was revoked).
+ * Never fall back to the anon key — that surfaces as "permission denied for function agent_poll".
+ */
+function agentDb(env: Env): SupabaseClient | Response {
+  const sb = serviceClient(env);
+  if (!sb) {
+    return json(
+      {
+        error:
+          "SUPABASE_SERVICE_ROLE_KEY가 Worker에 없습니다. `npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY` 후 다시 배포하세요.",
+      },
+      503,
+    );
+  }
+  return sb;
+}
+
+function agentRpcError(message: string): Response {
+  if (/permission denied/i.test(message)) {
+    return json(
+      {
+        error:
+          "agent_poll/report 실행 권한이 없습니다. Worker 시크릿 SUPABASE_SERVICE_ROLE_KEY가 올바른지 확인하세요.",
+        detail: message,
+      },
+      503,
+    );
+  }
+  const status = /unauthorized/i.test(message) ? 401 : 400;
+  return json({ error: message }, status);
 }
 
 export async function handleApi(req: Request, env: Env, path: string): Promise<Response> {
@@ -61,6 +89,7 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
         supabaseUrl: env.SUPABASE_URL,
         supabaseAnonKey: env.SUPABASE_ANON_KEY,
         slackConfigured: Boolean(env.SLACK_WEBHOOK_URL),
+        agentServiceRoleConfigured: Boolean(env.SUPABASE_SERVICE_ROLE_KEY?.trim()),
         inviteOnly: status.inviteOnly !== false,
         bootstrapAllowed: Boolean(status.bootstrapAllowed),
         inviteHookReady: Boolean(status.hookReady),
@@ -342,11 +371,9 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
       const token = bearer(req);
       if (!token) return json({ error: "unauthorized" }, 401);
       const sb = agentDb(env);
+      if (sb instanceof Response) return sb;
       const { data, error } = await sb.rpc("agent_poll", { p_token: token });
-      if (error) {
-        const status = /unauthorized/i.test(error.message) ? 401 : 400;
-        return json({ error: error.message }, status);
-      }
+      if (error) return agentRpcError(error.message);
       return json(data);
     }
 
@@ -371,11 +398,9 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
         jobs?: Array<{ id?: string; kind?: string; status: string; error?: string }>;
       };
       const sb = agentDb(env);
+      if (sb instanceof Response) return sb;
       const { data, error } = await sb.rpc("agent_report", { p_token: token, p_payload: body });
-      if (error) {
-        const status = /unauthorized/i.test(error.message) ? 401 : 400;
-        return json({ error: error.message }, status);
-      }
+      if (error) return agentRpcError(error.message);
 
       const house = (data as {
         house?: {
