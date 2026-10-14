@@ -117,7 +117,16 @@ pm2 start ecosystem.config.cjs
 pm2 save
 ```
 
-`tsx: command not found` 가 나면 `npm install` 후 위처럼 **ecosystem으로** 다시 띄우세요. (`pm2 start npm -- start` 비권장)
+`tsx` / `ERR_MODULE_NOT_FOUND` 가 나면 원격 업데이트가 `--omit=dev`로 tsx를 지운 경우가 많습니다:
+
+```bash
+cd agent
+npm install
+pm2 delete janitor-agent
+pm2 start ecosystem.config.cjs
+```
+
+`pm2 start npm -- start` 는 비권장.
 
 ## 관련 문서
 
