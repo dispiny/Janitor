@@ -39,3 +39,17 @@ test("migrations ship full RLS RPC and invites SQL", () => {
   assert.match(rpc, /create policy houses_select/);
   assert.ok(rpc.length > 2000, "migration must not be an empty stub");
 });
+
+test("admin-provisioned auth: no client signUp UI", () => {
+  const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+  const js = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+  assert.doesNotMatch(html, /id="panel-signup"|id="tab-signup"/);
+  assert.doesNotMatch(js, /\.signUp\s*\(/);
+  const mig = readFileSync(
+    new URL("../supabase/migrations/20261014090000_admin_provisioned_users.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(mig, /auth_provision_allowlist/);
+  assert.match(mig, /adminProvisionedOnly/);
+  assert.match(mig, /invite_house_member/);
+});

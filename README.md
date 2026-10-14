@@ -44,7 +44,10 @@ Supabase 대시보드 → **Authentication → URL Configuration**
 
 - Site URL / Redirect URLs: 배포한 Worker URL (또는 연결한 커스텀 도메인)
 
-**Authentication → Providers → Email → Confirm email** 을 끄면 가입 직후 바로 로그인됩니다.
+**Authentication → Providers → Email**
+
+- **Allow new users to sign up** → **OFF** (앱/`signUp`으로 계정 생성 불가)
+- Confirm email 은 취향에 맞게 (Dashboard에서 직접 만든 사용자는 Auto Confirm 권장)
 
 이 저장소에 연결된 Supabase 프로젝트: `ypklxfwpbyroxdolgiun` (ap-northeast-2, Free).
 
@@ -59,14 +62,17 @@ npm install && npm start
 
 에이전트는 집 안에서만 돌리면 되고, 클라우드 요금은 없습니다.
 
-### 초대만 가입 (공개 가입 차단)
+### 사용자 추가 (앱 회원가입 없음)
 
-DB에 `hook_invite_only_signup` 이 있습니다. **한 번만** 대시보드에서 훅을 켜 주세요.
+계정은 **Supabase Dashboard에서만** 만듭니다. 앱에는 가입 UI가 없습니다.
 
-1. [Authentication → Hooks](https://supabase.com/dashboard/project/ypklxfwpbyroxdolgiun/auth/hooks)
-2. **Before User Created** → Postgres → `public.hook_invite_only_signup` → Save
+1. [Authentication → Hooks](https://supabase.com/dashboard/project/ypklxfwpbyroxdolgiun/auth/hooks)  
+   **Before User Created** → Postgres → `public.hook_invite_only_signup` → Save  
+   (첫 사용자는 훅이 허용합니다. 이후 사용자는 앱에서 초대해 허용 목록에 올린 뒤 Dashboard에서 생성)
+2. **Authentication → Users → Add user** 로 이메일/비밀번호 생성 (Auto Confirm User 권장)
+3. 추가 멤버: 앱 설정에서 이메일 초대 → 같은 이메일로 Dashboard Add user → 상대방 로그인 시 집 합류
 
-이후에는 설정에서 초대한 이메일만 가입됩니다. (계정이 하나도 없을 때만 첫 집 주인 가입 허용)
+훅이 없어도 Dashboard에서 signup을 끄면 클라이언트 `signUp`은 막힙니다. 훅은 실수로 signup이 다시 켜진 경우를 막는 이중 장치입니다.
 
 ### 무료 티어에서 알아둘 점
 
@@ -88,12 +94,13 @@ cp .dev.vars.example .dev.vars   # SUPABASE_URL, SUPABASE_ANON_KEY 필수
 npm run dev
 ```
 
-브라우저에서 Worker 로컬 URL을 연 뒤 로그인합니다. 공개 가입은 막혀 있고, 초대받은 이메일만 **초대 가입**할 수 있습니다.
+브라우저에서 Worker 로컬 URL을 연 뒤, Supabase에서 만든 계정으로 로그인합니다. 앱 회원가입은 없습니다.
 
 ## API 요약
 
-- `GET /api/config` — Supabase URL/anon key + `inviteOnly` / `inviteHookReady` (`signup_status` RPC)
-- `POST /api/bootstrap` — 집 생성 (가입 직후)
+- `GET /api/config` — Supabase URL/anon key + `adminProvisionedOnly` / `signupEnabled` / `inviteHookReady` (`signup_status` RPC)
+- `POST /api/bootstrap` — 집 생성 (로그인 직후, 집이 없을 때)
+- `POST /api/invite` — 집 초대 + Auth 허용 목록 (`invite_house_member`)
 - `POST /api/servers` / `DELETE /api/servers/:id`
 - `POST /api/services` / `DELETE /api/services/:id`
 - `POST /api/jobs` — 인증된 작업 큐 enqueue (`wake`, `health_*`, `pve_sync`, `speed_probe`, `agent_update`)
