@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+test("agent API requires service role and does not fall back to anon", () => {
+  const api = readFileSync(new URL("../src/api.ts", import.meta.url), "utf8");
+  assert.match(api, /agentServiceRoleConfigured/);
+  assert.match(api, /Never fall back to the anon key/);
+  assert.doesNotMatch(api, /serviceClient\(env\)\s*\?\?\s*anonClient/);
+});
+
 test("wrangler config exposes supabase url without secrets or service role", () => {
   const raw = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
   assert.match(raw, /ypklxfwpbyroxdolgiun\.supabase\.co/);

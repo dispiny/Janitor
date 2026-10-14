@@ -831,6 +831,9 @@ async function init() {
   $("slack-status").textContent = state.config.slackConfigured
     ? "웹훅이 Worker에 설정되어 있습니다."
     : "웹훅이 아직 없습니다. wrangler secret put SLACK_WEBHOOK_URL";
+  if (state.config.agentServiceRoleConfigured === false) {
+    showToast("Worker에 SUPABASE_SERVICE_ROLE_KEY가 없습니다. 에이전트 poll이 거부됩니다.");
+  }
 
   if (state.config.inviteOnly && !state.config.inviteHookReady) {
     $("login-hint").textContent =

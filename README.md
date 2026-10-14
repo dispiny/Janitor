@@ -26,11 +26,13 @@ npm install
 npx wrangler login          # 브라우저에서 무료 Cloudflare 계정 연결
 # Dashboard Variables 또는:
 npx wrangler secret put SUPABASE_ANON_KEY
-npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY   # 에이전트 poll/report 필수
+npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY   # 에이전트 poll/report 필수 (없으면 permission denied)
 # SUPABASE_URL 은 Dashboard → Settings → Variables 에 설정
 npm run deploy
 npx wrangler secret put SLACK_WEBHOOK_URL   # 선택
 ```
+
+`permission denied for function agent_poll` 이 나오면 Worker에 `SUPABASE_SERVICE_ROLE_KEY`가 없거나 잘못된 것입니다. anon 키로는 RPC를 호출할 수 없습니다.
 
 배포 후 URL은 wrangler 출력 / Cloudflare Dashboard에서 확인하세요. 실제 호스트명은 git에 적지 마세요.
 
