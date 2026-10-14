@@ -1,12 +1,13 @@
 import { spawn } from "node:child_process";
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { AgentConfig } from "./config.js";
 
 export type SelfUpdateResult = {
   ok: true;
   repoDir: string;
+  packageDir: string;
   gitPull?: string;
   npmInstall?: string;
   restartScheduled: boolean;
@@ -14,7 +15,7 @@ export type SelfUpdateResult = {
   note: string;
 };
 
-function run(cmd: string, args: string[], cwd: string, timeoutMs = 120_000): Promise<string> {
+function run(cmd: string, args: string[], cwd: string, timeoutMs = 180_000): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {
       cwd,
@@ -55,8 +56,18 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+async function findGitRoot(start: string): Promise<string | null> {
+  let dir = start;
+  for (;;) {
+    if (await exists(join(dir, ".git"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
 /** Schedule pm2 restart after the current tick can report job results. */
-export function schedulePm2Restart(appName: string, delayMs = 2000): void {
+export function schedulePm2Restart(appName: string, delayMs = 2500): void {
   setTimeout(() => {
     const child = spawn("pm2", ["restart", appName, "--update-env"], {
       detached: true,
@@ -73,22 +84,34 @@ export async function runSelfUpdate(cfg: AgentConfig): Promise<SelfUpdateResult>
     throw new Error("AGENT_ALLOW_REMOTE_UPDATE is not enabled on this agent");
   }
 
-  const repoDir = cfg.agentRepoDir || process.cwd();
-  const gitDir = join(repoDir, ".git");
+  // Package dir = agent/ (where package.json + tsx live)
+  const packageDir = cfg.agentRepoDir || process.cwd();
+  const gitRoot = (await findGitRoot(packageDir)) || packageDir;
   let gitPull: string | undefined;
   let npmInstall: string | undefined;
 
-  if (await exists(gitDir)) {
-    await run("git", ["fetch", "--all", "--prune"], repoDir);
-    gitPull = await run("git", ["pull", "--ff-only"], repoDir);
+  if (await exists(join(gitRoot, ".git"))) {
+    await run("git", ["fetch", "--all", "--prune"], gitRoot);
+    gitPull = await run("git", ["pull", "--ff-only"], gitRoot);
   }
 
-  if (await exists(join(repoDir, "package.json"))) {
-    // Prefer lockfile install when present.
-    const hasLock = await exists(join(repoDir, "package-lock.json"));
-    npmInstall = hasLock
-      ? await run("npm", ["ci", "--omit=dev"], repoDir)
-      : await run("npm", ["install", "--omit=dev"], repoDir);
+  if (!(await exists(join(packageDir, "package.json")))) {
+    throw new Error(`package.json not found in ${packageDir}`);
+  }
+
+  // Never --omit=dev: older package.json kept tsx in devDependencies; wiping it
+  // breaks `node --import tsx` / pm2 after restart.
+  const hasLock = await exists(join(packageDir, "package-lock.json"));
+  npmInstall = hasLock
+    ? await run("npm", ["ci"], packageDir)
+    : await run("npm", ["install"], packageDir);
+
+  const loader = join(packageDir, "node_modules/tsx/dist/loader.mjs");
+  if (!(await exists(loader))) {
+    npmInstall += "\n" + (await run("npm", ["install", "tsx"], packageDir));
+  }
+  if (!(await exists(loader))) {
+    throw new Error("tsx loader missing after npm install; aborting restart");
   }
 
   const pm2AppName =
@@ -102,7 +125,8 @@ export async function runSelfUpdate(cfg: AgentConfig): Promise<SelfUpdateResult>
 
   return {
     ok: true,
-    repoDir,
+    repoDir: gitRoot,
+    packageDir,
     gitPull,
     npmInstall,
     restartScheduled,

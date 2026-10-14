@@ -1,17 +1,25 @@
-/** pm2: `pm2 start ecosystem.config.cjs` from the agent/ directory */
+/** From agent/: `pm2 start ecosystem.config.cjs` */
+const path = require("node:path");
+
+const loader = path.join(__dirname, "node_modules/tsx/dist/loader.mjs");
+
 module.exports = {
   apps: [
     {
-      name: "ops-agent",
+      name: "janitor-agent",
+      cwd: __dirname,
       script: "src/index.ts",
       interpreter: "node",
-      interpreter_args: "--import tsx",
-      cwd: __dirname,
+      // Absolute local loader — survives PATH issues after npm/pm2 restart
+      interpreter_args: `--import ${loader}`,
+      instances: 1,
+      autorestart: true,
+      max_restarts: 20,
+      min_uptime: "5s",
       env: {
         NODE_ENV: "production",
-        // Prefer a real .env file next to this config (loaded by the agent).
         AGENT_ALLOW_REMOTE_UPDATE: "true",
-        PM2_APP_NAME: "ops-agent",
+        PM2_APP_NAME: "janitor-agent",
       },
     },
   ],
