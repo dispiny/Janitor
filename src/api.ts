@@ -1,6 +1,6 @@
 import type { Env } from "./env";
 import { dedupeAlerts } from "./alert-dedupe";
-import { buildOpsAlert, notifySlack } from "./slack";
+import { buildDeploySuccessMessage, buildOpsAlert, notifySlack } from "./slack";
 import { anonClient, serviceClient, sha256Hex, userClient } from "./supabase";
 import { isUuid, parseServiceInput, type ServiceInput } from "./services";
 import { assertHttpUrl } from "./urls";
@@ -399,6 +399,10 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
       if (!token) return json({ error: "unauthorized" }, 401);
       const body = (await req.json()) as {
         houseName?: string;
+        agentStatus?: {
+          version?: string;
+          hostname?: string;
+        };
         services?: Array<{
           id?: string;
           name?: string;
@@ -412,7 +416,19 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
           slackOnFail?: boolean;
         }>;
         speed?: { down_mbps: number; up_mbps?: number };
-        jobs?: Array<{ id?: string; kind?: string; status: string; error?: string }>;
+        jobs?: Array<{
+          id?: string;
+          kind?: string;
+          status: string;
+          error?: string;
+          result?: {
+            deploy?: string;
+            deployOnUpdate?: boolean;
+            restartScheduled?: boolean;
+            pm2AppName?: string | null;
+            note?: string;
+          };
+        }>;
       };
       const sb = agentDb(env);
       if (sb instanceof Response) return sb;
@@ -482,6 +498,28 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
           p_token: token,
           p_state: deduped.nextState,
         });
+      }
+
+      // One-shot success notice when remote update ran Worker deploy.
+      const deployOk = (body.jobs || []).find(
+        (j) =>
+          j.kind === "agent_update" &&
+          j.status === "done" &&
+          Boolean(j.result?.deploy),
+      );
+      if (deployOk) {
+        await notifySlack(
+          env,
+          channel,
+          buildDeploySuccessMessage({
+            houseName: body.houseName || house?.name,
+            agentVersion: body.agentStatus?.version,
+            hostname: body.agentStatus?.hostname,
+            pm2AppName: deployOk.result?.pm2AppName,
+            restartScheduled: Boolean(deployOk.result?.restartScheduled),
+            note: deployOk.result?.note,
+          }),
+        );
       }
 
       return json(data || { ok: true });

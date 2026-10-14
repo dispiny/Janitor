@@ -40,6 +40,64 @@ function serviceLine(s: ServiceAlert): string {
   return `• *${s.name}*${where} — DOWN\n    ${got}${expect}${ms}${url}${err}`;
 }
 
+/** Positive notice when remote update finished Worker `npm run deploy`. */
+export function buildDeploySuccessMessage(input: {
+  houseName?: string | null;
+  agentVersion?: string | null;
+  hostname?: string | null;
+  pm2AppName?: string | null;
+  restartScheduled?: boolean;
+  note?: string | null;
+}): SlackMessage {
+  const house = (input.houseName || "").trim() || "집";
+  const version = (input.agentVersion || "").trim();
+  const host = (input.hostname || "").trim();
+  const pm2 = (input.pm2AppName || "").trim();
+  const note = truncate(String(input.note || ""), 160);
+
+  const lines = [
+    `*${house}* Worker 배포가 완료되었습니다.`,
+    version ? `• 에이전트 버전 \`${version}\`` : null,
+    host ? `• 호스트 \`${host}\`` : null,
+    input.restartScheduled
+      ? `• pm2 재시작 예약${pm2 ? ` (\`${pm2}\`)` : ""}`
+      : null,
+    note ? `• ${note}` : null,
+  ].filter(Boolean) as string[];
+
+  const text = `[${house}] Worker 배포 성공` + (version ? ` · v${version}` : "");
+
+  return {
+    text,
+    blocks: [
+      {
+        type: "header",
+        text: {
+          type: "plain_text",
+          text: `✅ ${house}: 배포 성공`,
+          emoji: true,
+        },
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: lines.join("\n"),
+        },
+      },
+      {
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: `${new Date().toISOString()} · 대시보드 원격 업데이트 · 배포`,
+          },
+        ],
+      },
+    ],
+  };
+}
+
 /** Build a readable Slack Block Kit alert for health / speed / job failures. */
 export function buildOpsAlert(input: {
   houseName?: string | null;

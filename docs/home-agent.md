@@ -109,7 +109,7 @@ curl -sS -H "Authorization: Bearer $AGENT_TOKEN" http://127.0.0.1:3920/v1/status
 | 웹 로그 | 폴링 시 구조화 이벤트 링버퍼를 `agent_report`로 올려 콘솔 **로그** 탭에 표시 (최근 100건) |
 | Job poller (`JANITOR_API_URL`) | 동작 (`tick` 동시 실행 가드, 인증 poll/report) |
 | 런타임 상태 보고 | 버전·hostname·pm2·uptime을 매 tick 보고, UI 자동 표시 |
-| 원격 업데이트 · 배포 | `agent_update` → git pull → (opt) 루트 `npm run deploy` → agent npm → `pm2 restart` |
+| 원격 업데이트 · 배포 | `agent_update` → git pull → (opt) 루트 `npm run deploy` → agent npm → `pm2 restart`. Worker 배포가 성공하면 Slack 성공 알림 |
 
 pm2 예시 (agent/ 에서):
 
