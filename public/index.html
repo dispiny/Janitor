@@ -200,6 +200,7 @@
               <button class="primary" type="submit">초대</button>
             </form>
             <p class="hint">초대한 이메일은 허용 목록에 올라갑니다. 그다음 Supabase → Authentication → Users에서 같은 이메일로 사용자를 만든 뒤, 상대방이 로그인하면 집에 합류합니다. 앱에서 회원가입은 할 수 없습니다.</p>
+            <p class="hint" id="owner-only-hint" hidden>집 이름·초대·에이전트 토큰·속도/슬랙 설정은 owner만 변경할 수 있습니다.</p>
           </article>
           <article class="card">
             <div class="card-label">연동</div>
@@ -286,7 +287,7 @@
       <p class="lede" id="redir-url" style="margin:12px 0;font-family:var(--mono);font-size:14px"></p>
       <div class="modal-actions">
         <button class="ghost" id="close-redir" type="button">취소</button>
-        <a class="primary" id="open-redir" href="#" target="_blank" rel="noopener">열기</a>
+        <a class="primary" id="open-redir" href="#" target="_blank" rel="noopener noreferrer">열기</a>
       </div>
     </div>
   </div>

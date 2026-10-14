@@ -25,6 +25,7 @@
   // (do not commit personal hostnames here)
   // Secrets (not committed):
   //   wrangler secret put SUPABASE_ANON_KEY
+  //   wrangler secret put SUPABASE_SERVICE_ROLE_KEY  # agent poll/report
   //   wrangler secret put SLACK_WEBHOOK_URL   # optional
   // Local: copy .dev.vars.example → .dev.vars
 }

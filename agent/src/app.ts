@@ -9,6 +9,7 @@ import { resolvePublicIp } from "./public-ip.js";
 import { tick } from "./poller.js";
 import { requestLog } from "./request-log.js";
 import { collectRuntimeStatus } from "./runtime-status.js";
+import { assertAllowedHttpUrl } from "./url-guard.js";
 import { sendMagicPacket } from "./wol/magic-packet.js";
 import { wakeViaUplus } from "./wol/uplus.js";
 
@@ -168,6 +169,11 @@ export function createApp(config: AgentConfig) {
       return c.json({ error: "invalid body", details: parsed.error.flatten() }, 400);
     }
 
+    const allowed = assertAllowedHttpUrl(parsed.data.url);
+    if (!allowed.ok) {
+      return c.json({ error: "url_not_allowed", message: allowed.error }, 400);
+    }
+
     let authorization: string | undefined;
     if (parsed.data.useHealthToken) {
       if (!config.healthcheckToken) {
@@ -177,7 +183,7 @@ export function createApp(config: AgentConfig) {
     }
 
     const result = await checkHttp({
-      url: parsed.data.url,
+      url: allowed.url,
       expectStatus: parsed.data.expectStatus,
       timeoutMs: parsed.data.timeoutMs,
       authorization,

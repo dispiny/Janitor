@@ -1,5 +1,6 @@
 import { handleApi } from "./api";
 import type { Env } from "./env";
+import { withSecurityHeaders } from "./security-headers";
 
 function log(event: string, fields: Record<string, unknown>) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), event, ...fields }));
@@ -27,6 +28,8 @@ export default {
       } else {
         response = await env.ASSETS.fetch(request);
       }
+
+      response = withSecurityHeaders(response);
 
       log("request.complete", {
         ...base,

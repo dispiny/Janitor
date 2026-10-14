@@ -5,6 +5,7 @@ import { log } from "./log.js";
 import { collectRuntimeStatus } from "./runtime-status.js";
 import { runSelfUpdate } from "./self-update.js";
 import { runSpeedTest } from "./speedtest.js";
+import { assertAllowedHttpUrl } from "./url-guard.js";
 import { sendMagicPacket } from "./wol/magic-packet.js";
 import { wakeViaUplus } from "./wol/uplus.js";
 
@@ -140,14 +141,37 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
             : snapshot.services || [];
         for (const service of list) {
           const expect = Number(service.expect_status || 200);
+          const allowed = assertAllowedHttpUrl(String(service.health_url || ""));
+          if (!allowed.ok) {
+            log("poller.health.rejected", {
+              ...jobBase,
+              phase: "rejected",
+              serviceId: service.id,
+              url: safeUrlForLog(service.health_url),
+              error: allowed.error,
+            });
+            serviceResults.push({
+              id: String(service.id),
+              name: String(service.name || service.id),
+              host: service.host_label ? String(service.host_label) : undefined,
+              url: String(service.health_url),
+              ok: false,
+              code: 0,
+              expect,
+              ms: 0,
+              error: allowed.error,
+              slackOnFail: service.slack_on_fail !== false,
+            });
+            continue;
+          }
           log("poller.health.processing", {
             ...jobBase,
             phase: "processing",
             serviceId: service.id,
-            url: safeUrlForLog(service.health_url),
+            url: safeUrlForLog(allowed.url),
           });
           const result = await checkHttp({
-            url: String(service.health_url),
+            url: allowed.url,
             expectStatus: expect,
             authorization: cfg.healthcheckToken
               ? `Bearer ${cfg.healthcheckToken}`
@@ -165,7 +189,7 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
             id: String(service.id),
             name: String(service.name || service.id),
             host: service.host_label ? String(service.host_label) : undefined,
-            url: String(service.health_url),
+            url: allowed.url,
             ok: result.ok,
             code: result.status,
             expect,
@@ -180,13 +204,23 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
           if (!server.pve_enabled) continue;
           const secret = snapshot.secrets?.[String(server.id)];
           if (!secret || !server.pve_host || !server.pve_token_id || !server.pve_node) continue;
+          const pveUrl = assertAllowedHttpUrl(String(server.pve_host));
+          if (!pveUrl.ok) {
+            log("poller.pve.rejected", {
+              ...jobBase,
+              phase: "rejected",
+              serverId: server.id,
+              error: pveUrl.error,
+            });
+            continue;
+          }
           log("poller.pve.processing", {
             ...jobBase,
             phase: "processing",
             serverId: server.id,
             node: server.pve_node,
           });
-          const base = String(server.pve_host).replace(/\/$/, "");
+          const base = pveUrl.url.replace(/\/$/, "");
           const auth = `${server.pve_token_id}=${secret}`;
           const headers = { Authorization: `PVEAPIToken=${auth}` };
           const node = encodeURIComponent(String(server.pve_node));

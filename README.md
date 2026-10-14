@@ -11,7 +11,8 @@
 | Supabase Free | Auth, Postgres, RLS | **무료** (프로젝트 2개 등 플랜 한도) |
 | Home agent (`agent/`) | 집 안 항상 켜진 기기 (cloudflared 옆) | 로컬/자택 하드웨어 |
 
-비밀값과 환경 변수(`SUPABASE_ANON_KEY`, `SLACK_WEBHOOK_URL`, `UPLUS_ROUTER_PASSWORD`, Proxmox 토큰 비밀, `AGENT_TOKEN`)는 git에 넣지 않습니다. Worker는 `.dev.vars`(로컬) / `wrangler secret`(배포)로 주입합니다.
+비밀값과 환경 변수(`SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SLACK_WEBHOOK_URL`, `UPLUS_ROUTER_PASSWORD`, Proxmox 토큰 비밀, `AGENT_TOKEN`)는 git에 넣지 않습니다. Worker는 `.dev.vars`(로컬) / `wrangler secret`(배포)로 주입합니다.  
+`SUPABASE_SERVICE_ROLE_KEY`는 `/api/agent/poll`·`/api/agent/report` 전용이며 브라우저에 노출하면 안 됩니다.
 
 ## 무료 배포 (권장: Cloudflare Workers)
 
@@ -25,6 +26,7 @@ npm install
 npx wrangler login          # 브라우저에서 무료 Cloudflare 계정 연결
 # Dashboard Variables 또는:
 npx wrangler secret put SUPABASE_ANON_KEY
+npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY   # 에이전트 poll/report 필수
 # SUPABASE_URL 은 Dashboard → Settings → Variables 에 설정
 npm run deploy
 npx wrangler secret put SLACK_WEBHOOK_URL   # 선택
@@ -90,7 +92,7 @@ npm install && npm start
 
 ```bash
 npm install
-cp .dev.vars.example .dev.vars   # SUPABASE_URL, SUPABASE_ANON_KEY 필수
+cp .dev.vars.example .dev.vars   # SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY 필수
 npm run dev
 ```
 
