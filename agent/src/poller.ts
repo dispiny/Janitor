@@ -6,6 +6,7 @@ import { collectRuntimeStatus } from "./runtime-status.js";
 import { runSelfUpdate } from "./self-update.js";
 import { runSpeedTest } from "./speedtest.js";
 import { assertAllowedHttpUrl } from "./url-guard.js";
+import { syncPveGuests } from "./pve-sync.js";
 import { scheduledKinds } from "./schedule.js";
 import { sendMagicPacket } from "./wol/magic-packet.js";
 export type PollerConfig = AgentConfig & {
@@ -124,10 +125,12 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
   const guests: Array<{
     server_id: string;
     name: string;
+    node: string;
     kind: string;
     is_on: boolean;
     vmid?: number;
   }> = [];
+  const guestSyncServerIds: string[] = [];
   let speed: { down_mbps: number; up_mbps: number } | undefined;
   let publicIp: string | undefined;
 
@@ -233,10 +236,12 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
         }
         finishJob(job, { status: "done", result: { count: serviceResults.length } });
       } else if (job.kind === "pve_sync") {
+        const onlyId = job.payload?.serverId ? String(job.payload.serverId) : null;
         for (const server of snapshot.servers || []) {
           if (!server.pve_enabled) continue;
+          if (onlyId && String(server.id) !== onlyId) continue;
           const secret = snapshot.secrets?.[String(server.id)];
-          if (!secret || !server.pve_host || !server.pve_token_id || !server.pve_node) continue;
+          if (!secret || !server.pve_host || !server.pve_token_id) continue;
           const pveUrl = assertAllowedHttpUrl(String(server.pve_host));
           if (!pveUrl.ok) {
             log("poller.pve.rejected", {
@@ -251,48 +256,30 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
             ...jobBase,
             phase: "processing",
             serverId: server.id,
-            node: server.pve_node,
+            nodeFilter: server.pve_node || null,
           });
-          const base = pveUrl.url.replace(/\/$/, "");
-          const auth = `${server.pve_token_id}=${secret}`;
-          const headers = { Authorization: `PVEAPIToken=${auth}` };
-          const node = encodeURIComponent(String(server.pve_node));
-          const [qemu, lxc] = await Promise.all([
-            fetch(`${base}/api2/json/nodes/${node}/qemu`, { headers, signal: AbortSignal.timeout(15000) }),
-            fetch(`${base}/api2/json/nodes/${node}/lxc`, { headers, signal: AbortSignal.timeout(15000) }),
-          ]);
-          if (qemu.ok) {
-            const body = (await qemu.json()) as { data?: Array<{ name?: string; vmid?: number; status?: string }> };
-            for (const item of body.data || []) {
-              guests.push({
-                server_id: String(server.id),
-                name: item.name || String(item.vmid),
-                kind: "VM",
-                is_on: item.status === "running",
-                vmid: item.vmid,
-              });
-            }
-          }
-          if (lxc.ok) {
-            const body = (await lxc.json()) as { data?: Array<{ name?: string; vmid?: number; status?: string }> };
-            for (const item of body.data || []) {
-              guests.push({
-                server_id: String(server.id),
-                name: item.name || String(item.vmid),
-                kind: "LXC",
-                is_on: item.status === "running",
-                vmid: item.vmid,
-              });
-            }
-          }
+          const synced = await syncPveGuests({
+            serverId: String(server.id),
+            baseUrl: pveUrl.url,
+            tokenId: String(server.pve_token_id),
+            tokenSecret: secret,
+            // Empty node → discover every node on this API root.
+            nodeFilter: server.pve_node ? String(server.pve_node) : null,
+          });
+          guestSyncServerIds.push(String(server.id));
+          guests.push(...synced.guests);
           log("poller.pve.complete", {
             ...jobBase,
             phase: "complete",
             serverId: server.id,
-            guests: guests.filter((g) => g.server_id === String(server.id)).length,
+            nodes: synced.nodes,
+            guests: synced.guests.length,
           });
         }
-        finishJob(job, { status: "done", result: { guests: guests.length } });
+        finishJob(job, {
+          status: "done",
+          result: { guests: guests.length, servers: guestSyncServerIds.length },
+        });
       } else if (job.kind === "public_ip") {
         const result = await resolvePublicIp();
         publicIp = result.ip;
@@ -347,7 +334,7 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
     }
   }
 
-  return { jobResults, serviceResults, serverUpdates, guests, speed, publicIp };
+  return { jobResults, serviceResults, serverUpdates, guests, guestSyncServerIds, speed, publicIp };
 }
 
 export async function tick(cfg: PollerConfig): Promise<void> {
@@ -370,6 +357,7 @@ export async function tick(cfg: PollerConfig): Promise<void> {
       servers: handled.serverUpdates,
       services: handled.serviceResults,
       guests: handled.guests,
+      guestSyncServerIds: handled.guestSyncServerIds,
       jobs: handled.jobResults.map((j) => ({
         id: j.id,
         kind: snapshot.jobs?.find((job) => job.id === j.id)?.kind,
