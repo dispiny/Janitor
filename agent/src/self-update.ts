@@ -3,6 +3,7 @@ import { access } from "node:fs/promises";
 import { constants } from "node:fs";
 import { dirname, join } from "node:path";
 import type { AgentConfig } from "./config.js";
+import { log } from "./log.js";
 
 export type SelfUpdateResult = {
   ok: true;
@@ -84,7 +85,7 @@ export function schedulePm2Restart(appName: string, delayMs = 2500): void {
       env: process.env,
     });
     child.unref();
-    console.log(JSON.stringify({ event: "pm2_restart_scheduled", appName }));
+    log("pm2_restart_scheduled", { appName });
   }, delayMs);
 }
 
@@ -113,7 +114,7 @@ export async function runSelfUpdate(cfg: AgentConfig): Promise<SelfUpdateResult>
         ["stash", "push", "-m", `janitor-agent-update-${Date.now()}`],
         gitRoot,
       );
-      console.log(JSON.stringify({ event: "self_update.git.stash", phase: "stashed", dirty: dirty.slice(0, 500) }));
+      log("self_update.git.stash", { phase: "stashed", dirty: dirty.slice(0, 500) });
     }
     try {
       gitPull = await run("git", ["pull", "--ff-only"], gitRoot);
@@ -141,14 +142,11 @@ export async function runSelfUpdate(cfg: AgentConfig): Promise<SelfUpdateResult>
       );
     }
     rootNpmInstall = await npmInstallIn(gitRoot);
-    console.log(
-      JSON.stringify({
-        event: "self_update.deploy.start",
-        cwd: gitRoot,
-        customDomain: process.env.CLOUDFLARE_CUSTOM_DOMAIN || null,
-        keepVars: true,
-      }),
-    );
+    log("self_update.deploy.start", {
+      cwd: gitRoot,
+      customDomain: process.env.CLOUDFLARE_CUSTOM_DOMAIN || null,
+      keepVars: true,
+    });
     // CI=1 → wrangler skips the interactive "config differs" prompt (defaults to continue).
     // scripts/deploy.mjs uses --keep-vars and optional CLOUDFLARE_CUSTOM_DOMAIN routes.
     deploy = await new Promise((resolve, reject) => {
@@ -180,7 +178,7 @@ export async function runSelfUpdate(cfg: AgentConfig): Promise<SelfUpdateResult>
         else reject(new Error(`npm run deploy failed (${code}): ${text || "no output"}`));
       });
     });
-    console.log(JSON.stringify({ event: "self_update.deploy.complete", cwd: gitRoot }));
+    log("self_update.deploy.complete", { cwd: gitRoot });
   }
 
   if (!(await exists(join(packageDir, "package.json")))) {

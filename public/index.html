@@ -41,6 +41,7 @@
         <button class="nav-btn" type="button" data-view="servers">서버</button>
         <button class="nav-btn" type="button" data-view="services">서비스</button>
         <button class="nav-btn" type="button" data-view="speed">속도</button>
+        <button class="nav-btn" type="button" data-view="logs">로그</button>
         <button class="nav-btn" type="button" data-view="settings">설정</button>
       </nav>
       <div class="account">
@@ -199,6 +200,28 @@
             </label>
             <button class="primary" id="save-speed-settings" type="button">저장</button>
             <p class="hint">웹훅 주소는 <span class="env">SLACK_WEBHOOK_URL</span> 시크릿으로만 둡니다. <span id="slack-status"></span></p>
+          </article>
+        </div>
+      </section>
+
+      <section id="view-logs" hidden>
+        <div class="page-head">
+          <div>
+            <h1>에이전트 로그</h1>
+            <p class="lede">홈 에이전트가 보고한 최근 이벤트와 작업 결과입니다.</p>
+          </div>
+          <button class="ghost" id="logs-refresh" type="button">새로고침</button>
+        </div>
+        <div class="split">
+          <article class="card">
+            <div class="card-label">최근 이벤트</div>
+            <p class="hint">폴링·작업·배포 등 구조화 로그입니다. 토큰·비밀번호는 기록하지 않습니다.</p>
+            <div class="agent-log" id="agent-log-list" aria-live="polite"></div>
+          </article>
+          <article class="card">
+            <div class="card-label">작업 이력</div>
+            <p class="hint">대시보드에서 넣은 wake·헬스·업데이트 등의 처리 결과입니다.</p>
+            <div class="job-log" id="agent-job-list"></div>
           </article>
         </div>
       </section>

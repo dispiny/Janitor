@@ -2,6 +2,7 @@ import { checkHttp } from "./health-check.js";
 import type { AgentConfig } from "./config.js";
 import { resolvePublicIp } from "./public-ip.js";
 import { log } from "./log.js";
+import { drainLogBuffer, restoreLogBuffer } from "./log.js";
 import { collectRuntimeStatus } from "./runtime-status.js";
 import { runSelfUpdate } from "./self-update.js";
 import { runSpeedTest } from "./speedtest.js";
@@ -369,10 +370,6 @@ export async function tick(cfg: PollerConfig): Promise<void> {
     // Only refresh public IP when the schedule (or an explicit job) asked for it.
     if (handled.publicIp) reportBody.publicIp = handled.publicIp;
     if (handled.speed) reportBody.speed = handled.speed;
-    await api(cfg, "/api/agent/report", {
-      method: "POST",
-      body: JSON.stringify(reportBody),
-    });
     log("tick.complete", {
       phase: "complete",
       house: snapshot.house?.name,
@@ -383,6 +380,17 @@ export async function tick(cfg: PollerConfig): Promise<void> {
       pm2: agentStatus.pm2,
       ms: Math.round(performance.now() - started),
     });
+    const logs = drainLogBuffer();
+    reportBody.logs = logs;
+    try {
+      await api(cfg, "/api/agent/report", {
+        method: "POST",
+        body: JSON.stringify(reportBody),
+      });
+    } catch (error) {
+      restoreLogBuffer(logs);
+      throw error;
+    }
   } catch (err) {
     log("tick.failed", {
       phase: "failed",
