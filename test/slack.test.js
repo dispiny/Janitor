@@ -1,6 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildOpsAlert } from "../src/slack-format.ts";
+import { buildDeploySuccessMessage, buildOpsAlert } from "../src/slack-format.ts";
+
+test("buildDeploySuccessMessage celebrates Worker deploy", () => {
+  const msg = buildDeploySuccessMessage({
+    houseName: "우리집",
+    agentVersion: "0.1.8",
+    hostname: "nuc",
+    pm2AppName: "janitor-agent",
+    restartScheduled: true,
+    note: "Worker npm run deploy finished",
+  });
+  assert.match(msg.text, /배포 성공/);
+  assert.match(msg.text, /우리집/);
+  assert.match(msg.text, /0\.1\.8/);
+  const blob = JSON.stringify(msg.blocks);
+  assert.match(blob, /배포가 완료/);
+  assert.match(blob, /janitor-agent/);
+  assert.match(blob, /nuc/);
+});
 
 test("buildOpsAlert lists failing services and speed clearly", () => {
   const msg = buildOpsAlert({

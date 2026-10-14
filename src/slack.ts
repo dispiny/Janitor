@@ -1,7 +1,11 @@
 import type { Env } from "./env";
-import { buildOpsAlert, type SlackMessage } from "./slack-format";
+import {
+  buildDeploySuccessMessage,
+  buildOpsAlert,
+  type SlackMessage,
+} from "./slack-format";
 
-export { buildOpsAlert };
+export { buildDeploySuccessMessage, buildOpsAlert };
 export type { SlackMessage };
 
 export async function notifySlack(
