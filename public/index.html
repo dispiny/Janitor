@@ -283,8 +283,16 @@
             <div class="env" id="agent-token-box" hidden></div>
             <div class="rule"><span>Wake-on-LAN</span><span class="meta">MAC 등록 → 에이전트가 매직 패킷 브로드캐스트</span></div>
             <div class="env">서버 추가 시 MAC (브로드캐스트·포트 선택)</div>
-            <div class="rule"><span>Proxmox API</span><span class="meta">토큰 비밀은 서버에만</span></div>
-            <div class="env">server_secrets (service role)</div>
+            <div class="rule"><span>Proxmox API</span><span class="meta">키만 넣으면 전체 노드</span></div>
+            <div id="pve-links"></div>
+            <form id="pve-link-form" style="margin-top:12px">
+              <label class="field"><span>API 주소</span><input id="pve-link-host" type="url" required placeholder="https://pve.home:8006"></label>
+              <label class="field"><span>토큰 ID</span><input id="pve-link-token" required placeholder="janitor@pve!monitor" autocomplete="off"></label>
+              <label class="field"><span>토큰 비밀</span><input id="pve-link-secret" type="password" required placeholder="저장 후 다시 표시하지 않음" autocomplete="new-password"></label>
+              <p class="error" id="pve-link-error"></p>
+              <button class="primary" type="submit">Proxmox 연동</button>
+            </form>
+            <p class="hint">클러스터면 노드 하나의 주소만 넣어도 됩니다. 에이전트가 노드 목록을 받아 VM/LXC를 전부 가져옵니다. 토큰 비밀은 <span class="env">server_secrets</span>에만 저장됩니다.</p>
             <p class="hint">에이전트는 깨울 서버마다 깔 필요 없습니다. Cloudflare Tunnel이 있는 항상 켜진 기기에만 두면 WOL, 공인 IP, 헬스 체크를 대신합니다.</p>
           </article>
         </div>

@@ -337,6 +337,40 @@ function renderList(target, items, factory, emptyText) {
   items.forEach((item, index) => target.appendChild(factory(item, index)));
 }
 
+function renderPveLinks() {
+  const host = $("pve-links");
+  host.replaceChildren();
+  state.servers.filter((s) => s.pve).forEach((server) => {
+    const guests = server.pve.guests || [];
+    const nodes = new Set(guests.map((g) => g.node).filter(Boolean));
+    const row = document.createElement("div");
+    row.className = "member";
+    const label = document.createElement("span");
+    label.textContent = guests.length
+      ? `${server.name} · 노드 ${nodes.size || 1}개 · 게스트 ${guests.length}개`
+      : `${server.name} · 동기화 대기 중`;
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
+    const sync = document.createElement("button");
+    sync.className = "text-btn";
+    sync.type = "button";
+    sync.textContent = "다시 읽기";
+    sync.addEventListener("click", () => enqueueJob("pve_sync", { serverId: server.id }));
+    const remove = document.createElement("button");
+    remove.className = "text-btn";
+    remove.type = "button";
+    remove.textContent = "해제";
+    remove.addEventListener("click", () => confirmAndRun(`${server.name} Proxmox 연동을 해제할까요?`, async () => {
+      await api(`/api/servers/${server.id}`, { method: "DELETE" });
+      showToast(`${server.name} 연동을 해제했습니다.`);
+      await refresh();
+    }));
+    actions.append(sync, remove);
+    row.append(label, actions);
+    host.appendChild(row);
+  });
+}
+
 function renderPve() {
   const host = $("dash-pve");
   host.replaceChildren();
@@ -344,7 +378,7 @@ function renderPve() {
   if (!linked.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.textContent = "연동된 Proxmox가 없습니다. 서버 추가에서 API 주소와 토큰만 넣으면 노드·게스트를 긁어옵니다.";
+    empty.textContent = "연동된 Proxmox가 없습니다. 설정 → 연동에서 API 주소와 토큰만 넣으면 전체 노드·게스트를 가져옵니다.";
     host.appendChild(empty);
     return;
   }
@@ -795,6 +829,7 @@ function render() {
   $("svc-count-unknown").textContent = String(state.services.filter((s) => s.ok == null).length);
   $("check-all").disabled = !state.services.length;
   renderPve();
+  renderPveLinks();
   renderAgentLogs();
   renderAgentJobs();
   applyOwnerUi();
@@ -904,6 +939,8 @@ function openServerModal() {
   $("srv-pve-host").required = false;
   $("srv-pve-token").required = false;
   $("srv-pve-secret").required = false;
+  $("srv-name").required = true;
+  $("srv-name").placeholder = "작업 PC";
   setWol("manual");
   $("server-modal").hidden = false;
   $("srv-name").focus();
@@ -1088,6 +1125,9 @@ async function init() {
     $("srv-pve-host").required = on;
     $("srv-pve-token").required = on;
     $("srv-pve-secret").required = on;
+    $("srv-name").required = !on;
+    $("srv-name").placeholder = on ? "비우면 API 주소의 호스트명" : "작업 PC";
+    if (on && !$("srv-mac").value.trim()) setWol("off");
   });
 
   $("server-form").addEventListener("submit", async (event) => {
@@ -1245,6 +1285,33 @@ async function init() {
     $("agent-token-hint").textContent = "이 토큰을 복사해 에이전트 AGENT_TOKEN에 넣으세요. 다시 볼 수 없습니다.";
     showToast("에이전트 토큰을 발급했습니다.");
     await refresh();
+  });
+
+  $("pve-link-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    $("pve-link-error").textContent = "";
+    try {
+      const data = await api("/api/servers", {
+        method: "POST",
+        body: JSON.stringify({
+          houseId: state.house.id,
+          wolMode: "off",
+          pveEnabled: true,
+          pveHost: $("pve-link-host").value.trim(),
+          pveTokenId: $("pve-link-token").value.trim(),
+          pveTokenSecret: $("pve-link-secret").value,
+        }),
+      });
+      $("pve-link-form").reset();
+      showToast(
+        data.syncQueued
+          ? "Proxmox를 연동했습니다. 에이전트가 곧 전체 노드·게스트를 가져옵니다."
+          : "Proxmox를 연동했습니다.",
+      );
+      await refresh();
+    } catch (err) {
+      $("pve-link-error").textContent = err.message;
+    }
   });
 
   $("agent-refresh")?.addEventListener("click", () => refresh());
