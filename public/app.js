@@ -5,6 +5,9 @@ const $ = (id) => document.getElementById(id);
 const state = {
   view: "dashboard",
   filter: "all",
+  svcFilter: "all",
+  svcQuery: "",
+  editingServiceId: null,
   wol: "manual",
   config: null,
   sb: null,
@@ -114,7 +117,25 @@ function mapService(row) {
     ok: row.last_ok,
     code: row.last_code,
     ms: row.last_ms,
+    checkedAt: row.last_checked_at,
   };
+}
+
+function serviceMatches(service) {
+  if (state.svcFilter === "down" && service.ok !== false) return false;
+  if (state.svcFilter === "unknown" && service.ok != null) return false;
+  const q = state.svcQuery.trim().toLowerCase();
+  if (!q) return true;
+  return [service.name, service.host, service.url].some((v) => (v || "").toLowerCase().includes(q));
+}
+
+async function confirmAndRun(message, fn) {
+  if (!window.confirm(message)) return;
+  try {
+    await fn();
+  } catch (err) {
+    showToast(err.message || "요청에 실패했습니다.");
+  }
 }
 
 async function loadHouseData() {
@@ -215,11 +236,11 @@ function serverRow(server, index, withDelete) {
     remove.className = "text-btn";
     remove.type = "button";
     remove.textContent = "삭제";
-    remove.addEventListener("click", async () => {
+    remove.addEventListener("click", () => confirmAndRun(`${server.name} 서버를 삭제할까요?`, async () => {
       await api(`/api/servers/${server.id}`, { method: "DELETE" });
       showToast(`${server.name} 을 목록에서 뺐습니다.`);
       await refresh();
-    });
+    }));
     actions.appendChild(remove);
   }
   return row;
@@ -249,7 +270,20 @@ function serviceCard(service, withDelete) {
     ? `아직 확인 전 · 기대 ${service.expect}`
     : service.ok
       ? `${service.code} · ${service.ms} ms · 기대 ${service.expect}`
-      : `응답 없음/실패 · 기대 ${service.expect}`;
+      : `${service.code ? `${service.code} 응답` : "응답 없음"} · 기대 ${service.expect}`;
+  if (service.checkedAt) {
+    const checked = document.createElement("div");
+    checked.className = "meta checked";
+    checked.textContent = `마지막 확인 ${relativeTime(service.checkedAt)}`;
+    checked.title = new Date(service.checkedAt).toLocaleString("ko-KR");
+    card.querySelector(".result").after(checked);
+  }
+  if (!service.slack) {
+    const muted = document.createElement("div");
+    muted.className = "meta";
+    muted.textContent = "Slack 알림 꺼짐";
+    card.querySelector(".result").after(muted);
+  }
   const actions = card.querySelector(".actions");
   const check = document.createElement("button");
   check.className = "text-btn";
@@ -266,15 +300,21 @@ function serviceCard(service, withDelete) {
     actions.appendChild(manage);
   }
   if (withDelete) {
+    const edit = document.createElement("button");
+    edit.className = "text-btn";
+    edit.type = "button";
+    edit.textContent = "편집";
+    edit.addEventListener("click", () => openServiceModal(service));
+    actions.appendChild(edit);
     const remove = document.createElement("button");
     remove.className = "text-btn";
     remove.type = "button";
     remove.textContent = "삭제";
-    remove.addEventListener("click", async () => {
+    remove.addEventListener("click", () => confirmAndRun(`${service.name} 헬스 체크를 삭제할까요?`, async () => {
       await api(`/api/services/${service.id}`, { method: "DELETE" });
       showToast(`${service.name} 헬스 체크를 뺐습니다.`);
       await refresh();
-    });
+    }));
     actions.appendChild(remove);
   }
   return card;
@@ -561,7 +601,18 @@ function render() {
   renderList($("dash-servers"), state.servers, (s, i) => serverRow(s, i, false), "등록된 서버가 없습니다. 서버 추가로 집을 채우면 됩니다.");
   renderList($("server-list"), visible, (s, i) => serverRow(s, i, true), "등록된 서버가 없습니다. 서버 추가로 집을 채우면 됩니다.");
   renderList($("dash-services"), state.services.filter((s) => s.ok === false), (s) => serviceCard(s, false), "실패한 헬스 체크가 없습니다.");
-  renderList($("service-list"), state.services, (s) => serviceCard(s, true), "등록된 서비스가 없습니다. 헬스 체크 주소를 추가하면 됩니다.");
+  renderList(
+    $("service-list"),
+    state.services.filter(serviceMatches),
+    (s) => serviceCard(s, true),
+    state.services.length
+      ? "조건에 맞는 서비스가 없습니다."
+      : "등록된 서비스가 없습니다. 서비스 추가로 헬스 체크 주소를 등록하면 됩니다.",
+  );
+  $("svc-count-all").textContent = String(state.services.length);
+  $("svc-count-down").textContent = String(downCount);
+  $("svc-count-unknown").textContent = String(state.services.filter((s) => s.ok == null).length);
+  $("check-all").disabled = !state.services.length;
   renderPve();
   applyOwnerUi();
 
@@ -578,10 +629,11 @@ function render() {
       remove.className = "text-btn";
       remove.type = "button";
       remove.textContent = "빼기";
-      remove.addEventListener("click", async () => {
-        await state.sb.from("house_members").delete().eq("house_id", house.id).eq("user_id", member.user_id);
+      remove.addEventListener("click", () => confirmAndRun(`${member.email} 을 집에서 뺄까요?`, async () => {
+        const { error } = await state.sb.from("house_members").delete().eq("house_id", house.id).eq("user_id", member.user_id);
+        if (error) throw error;
         await refresh();
-      });
+      }));
       row.appendChild(remove);
     }
     members.appendChild(row);
@@ -600,13 +652,22 @@ async function refresh() {
   render();
 }
 
-async function enqueueJob(kind, payload = {}) {
+async function enqueueJob(kind, payload = {}, { quiet = false } = {}) {
   if (!state.house) return;
-  await api("/api/jobs", {
-    method: "POST",
-    body: JSON.stringify({ houseId: state.house.id, kind, payload }),
-  });
-  showToast("에이전트에 작업을 넣었습니다.");
+  try {
+    await api("/api/jobs", {
+      method: "POST",
+      body: JSON.stringify({ houseId: state.house.id, kind, payload }),
+    });
+  } catch (err) {
+    showToast(err.message || "작업을 넣지 못했습니다.");
+    return;
+  }
+  if (!quiet) {
+    showToast(isAgentConnected()
+      ? "에이전트에 작업을 넣었습니다."
+      : "작업을 넣었습니다. 에이전트가 오프라인이라 연결되면 처리됩니다.");
+  }
   await refresh();
 }
 
@@ -661,13 +722,42 @@ function openServerModal() {
   $("srv-name").focus();
 }
 
-function openServiceModal() {
+function fillHostOptions() {
+  const names = new Set();
+  state.servers.forEach((s) => s.name && names.add(s.name));
+  state.guests.forEach((g) => g.name && names.add(g.name));
+  state.services.forEach((s) => s.host && names.add(s.host));
+  const list = $("svc-host-options");
+  list.replaceChildren(...[...names].sort().map((name) => {
+    const option = document.createElement("option");
+    option.value = name;
+    return option;
+  }));
+}
+
+function openServiceModal(service = null) {
+  const editing = service && service.id ? service : null;
+  state.editingServiceId = editing?.id || null;
   $("svc-form").reset();
-  $("svc-expect").value = "200";
-  $("svc-slack").checked = true;
+  $("svc-title").textContent = editing ? "서비스 편집" : "서비스 추가";
+  $("svc-submit").textContent = editing ? "저장" : "추가";
+  $("svc-check-now-row").hidden = Boolean(editing);
+  $("svc-name").value = editing?.name || "";
+  $("svc-host").value = editing?.host || "";
+  $("svc-url").value = editing?.url || "";
+  $("svc-expect").value = String(editing?.expect || 200);
+  $("svc-manage").value = editing?.manageUrl || "";
+  $("svc-slack").checked = editing ? Boolean(editing.slack) : true;
+  $("svc-check-now").checked = true;
   $("svc-error").textContent = "";
+  fillHostOptions();
   $("svc-modal").hidden = false;
   $("svc-name").focus();
+}
+
+function closeServiceModal() {
+  $("svc-modal").hidden = true;
+  state.editingServiceId = null;
 }
 
 async function ensureHouse(houseName) {
@@ -739,9 +829,19 @@ async function init() {
 
   $("logout").addEventListener("click", async () => {
     await state.sb.auth.signOut();
-    state.house = null;
-    state.servers = [];
-    state.services = [];
+    Object.assign(state, {
+      session: null,
+      house: null,
+      membershipRole: null,
+      members: [],
+      servers: [],
+      services: [],
+      guests: [],
+      speeds: [],
+      view: "dashboard",
+    });
+    $("app").hidden = true;
+    $("auth").hidden = false;
   });
 
   document.querySelectorAll(".nav-btn").forEach((button) => {
@@ -764,8 +864,29 @@ async function init() {
   $("add-from-list").addEventListener("click", openServerModal);
   $("close-server").addEventListener("click", () => { $("server-modal").hidden = true; });
   $("close-redir").addEventListener("click", () => { $("redirect-modal").hidden = true; });
-  $("add-svc-list").addEventListener("click", openServiceModal);
-  $("close-svc").addEventListener("click", () => { $("svc-modal").hidden = true; });
+  $("add-svc-list").addEventListener("click", () => openServiceModal());
+  $("add-svc-dash").addEventListener("click", () => openServiceModal());
+  $("close-svc").addEventListener("click", closeServiceModal);
+  document.querySelectorAll("[data-svc-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.svcFilter = button.dataset.svcFilter;
+      document.querySelectorAll("[data-svc-filter]").forEach((item) => {
+        item.setAttribute("aria-selected", String(item === button));
+      });
+      render();
+    });
+  });
+  $("svc-search").addEventListener("input", (event) => {
+    state.svcQuery = event.target.value;
+    render();
+  });
+  document.querySelectorAll(".overlay").forEach((overlay) => {
+    overlay.addEventListener("click", (event) => {
+      if (event.target !== overlay) return;
+      overlay.hidden = true;
+      if (overlay.id === "svc-modal") state.editingServiceId = null;
+    });
+  });
   $("goto-services").addEventListener("click", () => { state.view = "services"; render(); });
 
   document.querySelectorAll("#wol-choice button").forEach((button) => {
@@ -809,25 +930,38 @@ async function init() {
   $("svc-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     $("svc-error").textContent = "";
+    const submit = $("svc-submit");
+    const editingId = state.editingServiceId;
+    const fields = {
+      name: $("svc-name").value.trim(),
+      hostLabel: $("svc-host").value.trim(),
+      healthUrl: $("svc-url").value.trim(),
+      expectStatus: Number($("svc-expect").value || 200),
+      manageUrl: $("svc-manage").value.trim(),
+      slackOnFail: $("svc-slack").checked,
+    };
+    submit.disabled = true;
     try {
-      await api("/api/services", {
-        method: "POST",
-        body: JSON.stringify({
-          houseId: state.house.id,
-          name: $("svc-name").value.trim(),
-          hostLabel: $("svc-host").value.trim(),
-          healthUrl: $("svc-url").value.trim(),
-          expectStatus: Number($("svc-expect").value),
-          manageUrl: $("svc-manage").value.trim(),
-          slackOnFail: $("svc-slack").checked,
-        }),
-      });
-      $("svc-modal").hidden = true;
-      showToast("헬스 체크를 추가했습니다.");
+      const data = editingId
+        ? await api(`/api/services/${editingId}`, { method: "PATCH", body: JSON.stringify(fields) })
+        : await api("/api/services", {
+            method: "POST",
+            body: JSON.stringify({ houseId: state.house.id, checkNow: $("svc-check-now").checked, ...fields }),
+          });
+      closeServiceModal();
+      const verb = editingId ? "저장했습니다" : "추가했습니다";
+      const followUp = data.checkQueued
+        ? isAgentConnected()
+          ? " 곧 첫 확인 결과가 표시됩니다."
+          : " 에이전트가 연결되면 확인합니다."
+        : "";
+      showToast(`${fields.name} 헬스 체크를 ${verb}.${followUp}`);
       state.view = "services";
       await refresh();
     } catch (err) {
       $("svc-error").textContent = err.message;
+    } finally {
+      submit.disabled = false;
     }
   });
 
@@ -919,7 +1053,7 @@ async function init() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       $("server-modal").hidden = true;
-      $("svc-modal").hidden = true;
+      closeServiceModal();
       $("redirect-modal").hidden = true;
     }
   });

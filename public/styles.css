@@ -311,6 +311,10 @@
     .guest .health { display: block; margin-top: 8px; }
     .guest.down .health { color: var(--danger); }
     .filters { display: flex; gap: 22px; border-bottom: 1px solid var(--line); }
+    .svc-toolbar { align-items: center; flex-wrap: wrap; gap: 12px 22px; padding-bottom: 8px; }
+    .svc-toolbar .svc-search { margin-left: auto; width: min(260px, 100%); }
+    .tab .count { color: var(--faint); font-weight: 400; margin-left: 2px; }
+    .svc .checked { color: var(--faint); font-size: 12px; }
 
     .banner {
       background: #f8ece9;
