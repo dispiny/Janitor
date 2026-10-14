@@ -103,7 +103,7 @@ curl -sS -H "Authorization: Bearer $AGENT_TOKEN" http://127.0.0.1:3920/v1/status
 | 자동 스케줄 | tick마다 주기·마지막 시각을 보고 due인 것만 실행 (집 설정, **0=끔**). 수동 버튼도 그대로 동작 |
 | 공인 IP | `ipify` → `ifconfig.me`. 기본 **2시간** (잘 안 바뀜) |
 | HTTP 헬스 | 기본 **5분** `health_all` |
-| Proxmox 동기화 | 기본 **15분** `pve_sync` |
+| Proxmox 동기화 | 기본 **15분** `pve_sync`. 노드를 비운 API 연동이면 `/nodes`로 찾은 노드를 서버로 등록·갱신·정리 (`pveNodes`) |
 | 속도 측정 | Fast.com 스타일. 기본 **1시간** (측정 비용↑) |
 | 요청 로그 | 모든 HTTP·job을 `received` → `processing` → `complete`/`failed` 3단계로 stdout JSON (토큰 비출력) |
 | 웹 로그 | 폴링 시 구조화 이벤트 링버퍼를 `agent_report`로 올려 콘솔 **로그** 탭에 표시 (최근 100건) |
