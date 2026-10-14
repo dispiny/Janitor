@@ -232,8 +232,8 @@
             <button class="primary" id="mint-agent-token" type="button">에이전트 토큰 발급</button>
             <p class="hint" id="agent-token-hint">토큰은 한 번만 보여 줍니다. AGENT_TOKEN 환경 변수로 에이전트에 넣으세요.</p>
             <div class="env" id="agent-token-box" hidden></div>
-            <div class="rule"><span>U+ 공유기 WOL</span><span class="meta">등록 장치로 깨우기</span></div>
-            <div class="env">UPLUS_ROUTER_URL<br>UPLUS_ROUTER_PASSWORD</div>
+            <div class="rule"><span>Wake-on-LAN</span><span class="meta">MAC 등록 → 에이전트가 매직 패킷 브로드캐스트</span></div>
+            <div class="env">서버 추가 시 MAC (브로드캐스트·포트 선택)</div>
             <div class="rule"><span>Proxmox API</span><span class="meta">토큰 비밀은 서버에만</span></div>
             <div class="env">server_secrets (service role)</div>
             <p class="hint">에이전트는 깨울 서버마다 깔 필요 없습니다. Cloudflare Tunnel이 있는 항상 켜진 기기에만 두면 WOL, 공인 IP, 헬스 체크를 대신합니다.</p>
@@ -253,17 +253,13 @@
       <div class="label">Wake-on-LAN</div>
       <div class="choice" id="wol-choice">
         <button type="button" data-wol="off" aria-pressed="false">사용 안 함</button>
-        <button type="button" data-wol="uplus" aria-pressed="true">U+ 공유기</button>
-        <button type="button" data-wol="manual" aria-pressed="false">수동 등록</button>
+        <button type="button" data-wol="manual" aria-pressed="true">MAC 등록</button>
       </div>
-      <div id="wol-uplus">
-        <label class="field"><span>공유기에 등록된 장치 이름</span><input id="srv-uplus" placeholder="거실-PC"></label>
-        <p class="hint">공유기 비밀번호는 입력하지 않습니다. 에이전트가 UPLUS_ROUTER_PASSWORD를 읽습니다.</p>
-      </div>
-      <div id="wol-manual" hidden>
-        <label class="field"><span>MAC 주소</span><input id="srv-mac" placeholder="02:00:00:00:00:10" pattern="^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$"></label>
-        <label class="field"><span>브로드캐스트</span><input id="srv-bcast" value="192.168.0.255"></label>
+      <div id="wol-manual">
+        <label class="field"><span>MAC 주소</span><input id="srv-mac" placeholder="AA:BB:CC:DD:EE:FF 또는 AA-BB-…" autocomplete="off"></label>
+        <label class="field"><span>브로드캐스트 (비우면 255.255.255.255)</span><input id="srv-bcast" placeholder="255.255.255.255" inputmode="decimal"></label>
         <label class="field"><span>포트</span><input id="srv-port" type="number" value="9" min="1" max="65535"></label>
+        <p class="hint">에이전트가 집 LAN에서 매직 패킷을 3번 보냅니다. 유선 NIC MAC을 쓰세요. 서브넷이 다르면 브로드캐스트를 예: 192.168.219.255 로 지정하세요.</p>
       </div>
       <label class="check"><input id="srv-pve" type="checkbox"> Proxmox 노드로 연동</label>
       <div id="pve-fields" hidden>

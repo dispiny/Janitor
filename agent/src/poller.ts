@@ -7,8 +7,6 @@ import { runSelfUpdate } from "./self-update.js";
 import { runSpeedTest } from "./speedtest.js";
 import { assertAllowedHttpUrl } from "./url-guard.js";
 import { sendMagicPacket } from "./wol/magic-packet.js";
-import { wakeViaUplus } from "./wol/uplus.js";
-
 export type PollerConfig = AgentConfig & {
   janitorApiUrl: string;
   pollMs: number;
@@ -115,23 +113,15 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
           serverId: server.id,
           mode,
         });
-        if (mode === "manual") {
-          const result = await sendMagicPacket({
-            mac: String(server.wol_mac),
-            broadcast: String(server.wol_broadcast || "192.168.0.255"),
-            port: Number(server.wol_port || 9),
-          });
-          log("poller.wake.complete", { ...jobBase, phase: "complete", ...result });
-        } else if (mode === "uplus") {
-          const result = await wakeViaUplus({
-            device: String(server.wol_uplus_device || ""),
-            routerUrl: cfg.uplusRouterUrl,
-            routerPassword: cfg.uplusRouterPassword,
-          });
-          log("poller.wake.complete", { ...jobBase, phase: "complete", ...result });
-        } else {
-          throw new Error("WOL disabled");
+        if (mode !== "manual" || !server.wol_mac) {
+          throw new Error("WOL is not configured: register the server's MAC address");
         }
+        const result = await sendMagicPacket({
+          mac: String(server.wol_mac),
+          broadcast: server.wol_broadcast ? String(server.wol_broadcast) : null,
+          port: server.wol_port ? Number(server.wol_port) : null,
+        });
+        log("poller.wake.complete", { ...jobBase, phase: "complete", ...result });
         serverUpdates.push({ id: String(server.id), is_on: true });
         jobResults.push({ id: job.id, status: "done", result: { mode } });
       } else if (job.kind === "health_one" || job.kind === "health_all") {

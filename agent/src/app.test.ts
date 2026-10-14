@@ -39,17 +39,15 @@ describe("home agent HTTP API", () => {
     const body = (await res.json()) as {
       service: string;
       tunnelHostname: string;
-      capabilities: { wakeManual: boolean; wakeUplus: boolean; remoteUpdate: boolean };
+      capabilities: { wakeManual: boolean; wakeUplus?: boolean; remoteUpdate: boolean };
       runtime?: { version?: string };
-      uplusConfigured?: boolean;
     };
     assert.equal(body.service, "janitor-home-agent");
     assert.equal(body.tunnelHostname, "agent.example.trycloudflare.com");
     assert.equal(body.capabilities.wakeManual, true);
-    assert.equal(body.capabilities.wakeUplus, false);
+    assert.equal(body.capabilities.wakeUplus, undefined);
     assert.equal(body.capabilities.remoteUpdate, false);
     assert.ok(body.runtime?.version);
-    assert.equal(body.uplusConfigured, undefined);
   });
 
   it("validates wake body", async () => {
@@ -65,24 +63,7 @@ describe("home agent HTTP API", () => {
     assert.equal(res.status, 400);
   });
 
-  it("returns 501 for uplus until provider is wired", async () => {
-    const app = createApp({
-      ...config,
-      uplusRouterUrl: "https://router.local",
-      uplusRouterPassword: "secret",
-    });
-    const res = await app.request("/v1/wake", {
-      method: "POST",
-      headers: {
-        authorization: "Bearer test-token",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ mode: "uplus", device: "거실-PC" }),
-    });
-    assert.equal(res.status, 501);
-  });
-
-  it("returns 400 with code when uplus env is missing", async () => {
+  it("rejects the removed uplus mode", async () => {
     const app = createApp(config);
     const res = await app.request("/v1/wake", {
       method: "POST",
@@ -93,8 +74,23 @@ describe("home agent HTTP API", () => {
       body: JSON.stringify({ mode: "uplus", device: "거실-PC" }),
     });
     assert.equal(res.status, 400);
-    const body = (await res.json()) as { error: string };
-    assert.equal(body.error, "uplus_not_configured");
+  });
+
+  it("broadcasts a magic packet to the limited broadcast address by default", async () => {
+    const app = createApp(config);
+    const res = await app.request("/v1/wake", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer test-token",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ mac: "aa-bb-cc-dd-ee-01", port: 40009 }),
+    });
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { mac: string; broadcast: string; sent: number };
+    assert.equal(body.mac, "AA:BB:CC:DD:EE:01");
+    assert.equal(body.broadcast, "255.255.255.255");
+    assert.equal(body.sent, 3);
   });
 
   it("returns 502 when http check expectation fails", async () => {

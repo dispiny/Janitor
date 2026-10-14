@@ -1,6 +1,6 @@
 {
   "name": "janitor-home-agent",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "description": "Always-on home agent for Janitor: WOL, public IP, HTTP health checks",
