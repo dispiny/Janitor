@@ -43,13 +43,19 @@ agent/
 | `AGENT_TOKEN` | yes | Worker/대시보드가 보내는 Bearer 토큰 |
 | `JANITOR_API_URL` | poll용 | Worker base URL. 있으면 job 큐를 폴링 |
 | `AGENT_POLL_MS` | no | 폴링 간격(ms), 기본 `15000`, 최소 `3000` |
-| `SPEED_PROBE_BYTES` | no | speed_probe 샘플 상한(기본 2MiB, 최대 5MiB) |
+| `SPEEDTEST_PROVIDER` | no | `auto`(기본) · `fast` · `cloudflare` — Fast.com CDN 우선, 실패 시 Cloudflare |
+| `SPEEDTEST_DURATION_MS` | no | 다운로드 측정 시간(ms), 기본 `12000` (3–60초) |
+| `SPEEDTEST_CONNECTIONS` | no | 병렬 연결 수, 기본 `4` (1–8) |
+| `SPEED_PROBE_BYTES` | no | 레거시 단일 샘플 상한(호환용) |
 | `PORT` | no | 기본 `3920` |
 | `HOST` | no | 기본 `0.0.0.0` |
 | `CF_TUNNEL_HOSTNAME` | no | 상태 응답에 광고할 Tunnel 호스트명 |
 | `UPLUS_ROUTER_URL` | no | U+ 공유기 관리 URL (U+ WOL용) |
 | `UPLUS_ROUTER_PASSWORD` | no | 공유기 비밀번호. API 응답에 절대 포함하지 않음 |
 | `HEALTHCHECK_TOKEN` | no | `useHealthToken: true`일 때 헬스 요청에 붙임 |
+| `AGENT_ALLOW_REMOTE_UPDATE` | no | `true`면 대시보드 원격 업데이트(job) 허용 |
+| `PM2_APP_NAME` | 원격갱신 시 | pm2 프로세스 이름 (예: `ops-agent`) |
+| `AGENT_REPO_DIR` | no | git pull/npm 대상 디렉터리 (기본 cwd) |
 
 샘플: [`agent/.env.example`](../agent/.env.example).  
 `.env`와 실제 비밀값은 git에 커밋하지 않습니다.
@@ -65,6 +71,22 @@ npm test
 npm start
 ```
 
+`npm start` / `npm run dev`는 기동 시 프로젝트 루트의 `.env`를 읽습니다.  
+이미 셸에보낸 환경 변수가 있으면 그쪽이 우선입니다.
+
+`.env` 예 (따옴표·`export` 없이 적어도 됩니다):
+
+```bash
+AGENT_TOKEN=여기에-긴-비밀값
+PORT=3920
+```
+
+`AGENT_TOKEN is required`가 나오면:
+
+1. `.env`가 **`agent/` 폴더 안**에 있는지 (`agent/.env`)
+2. 내용이 `AGENT_TOKEN=값` 한 줄인지 (앞에 공백/한글 키 이름 없는지)
+3. 임시로 `AGENT_TOKEN=값 npm start` 로도 뜨는지
+
 개발 중 재시작이 필요하면 `npm run dev` (`tsx watch`).
 
 스모크 예:
@@ -78,13 +100,27 @@ curl -sS -H "Authorization: Bearer $AGENT_TOKEN" http://127.0.0.1:3920/v1/status
 
 | 기능 | 상태 |
 | --- | --- |
-| 수동 MAC magic packet | 동작 |
+| 수동 MAC magic packet | 동작 (UDP magic packet 송신) |
+| U+ 공유기 WOL | **미구현** (`501 uplus_not_implemented`) |
 | 공인 IP 조회 | 동작 (`ipify` → `ifconfig.me` 폴백) |
 | HTTP 헬스 체크 | 동작 |
+| 요청 로그 | 모든 HTTP·job을 `received` → `processing` → `complete`/`failed` 3단계로 stdout JSON (토큰 비출력) |
 | Job poller (`JANITOR_API_URL`) | 동작 (`tick` 동시 실행 가드, 인증 poll/report) |
-| U+ 공유기 WOL | 자리만 (`501 uplus_not_implemented`, CGI 추측 없음) |
-| 속도 측정 | `speed_probe` job (샘플 상한 `SPEED_PROBE_BYTES`) |
+| 런타임 상태 보고 | 버전·hostname·pm2·uptime을 매 tick 보고, UI 자동 표시 |
+| 원격 업데이트 | `agent_update` job → git pull + npm + `pm2 restart` (opt-in) |
+| 속도 측정 | `speed_probe` — Fast.com 스타일 병렬 다운로드(Mbps) + Cloudflare 업로드 |
 | Proxmox 동기화 | `pve_sync` job (시크릿은 `server_secrets`, 클라이언트 RLS deny) |
+
+pm2 예시 (agent/ 에서):
+
+```bash
+npm install
+pm2 delete janitor-agent 2>/dev/null || true
+pm2 start ecosystem.config.cjs
+pm2 save
+```
+
+`tsx: command not found` 가 나면 `npm install` 후 위처럼 **ecosystem으로** 다시 띄우세요. (`pm2 start npm -- start` 비권장)
 
 ## 관련 문서
 

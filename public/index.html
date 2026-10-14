@@ -15,10 +15,6 @@
     </div>
     <div class="auth-main">
       <div class="auth-card">
-      <div class="tabs" role="tablist">
-        <button class="tab" id="tab-login" type="button" role="tab" aria-selected="true" aria-controls="panel-login">로그인</button>
-        <button class="tab" id="tab-signup" type="button" role="tab" aria-selected="false" aria-controls="panel-signup">초대 가입</button>
-      </div>
       <h1 id="auth-title">로그인</h1>
 
       <form id="panel-login" role="tabpanel">
@@ -28,16 +24,7 @@
         <div class="stack">
           <button class="primary" type="submit">로그인</button>
         </div>
-        <p class="hint">초대받은 계정만 로그인할 수 있습니다. 공개 가입은 막혀 있습니다.</p>
-      </form>
-
-      <form id="panel-signup" role="tabpanel" hidden>
-        <label class="field"><span>초대받은 이메일</span><input id="signup-email" type="email" autocomplete="username" placeholder="you@example.com" required></label>
-        <label class="field"><span>비밀번호</span><input id="signup-password" type="password" autocomplete="new-password" minlength="8" placeholder="8자 이상" required></label>
-        <label class="field" id="signup-house-field" hidden><span>집 이름</span><input id="signup-house" type="text" placeholder="우리집"></label>
-        <p class="error" id="signup-error"></p>
-        <button class="primary" type="submit">가입하기</button>
-        <p class="hint" id="signup-hint">설정에서 초대한 이메일만 가입됩니다. 아무나 계정을 만들 수 없습니다.</p>
+        <p class="hint" id="login-hint">회원가입은 없습니다. Supabase Authentication에서 만든 계정으로만 로그인하세요.</p>
       </form>
       </div>
     </div>
@@ -80,6 +67,8 @@
               <div class="kv-row"><span>공인 IP</span><b id="public-ip">—</b></div>
               <div class="kv-row"><span>확인</span><b id="public-ip-meta">아직 없음</b></div>
               <div class="kv-row"><span>에이전트</span><b id="agent-seen">미연결</b></div>
+              <div class="kv-row"><span>버전</span><b id="agent-version">—</b></div>
+              <div class="kv-row"><span>호스트</span><b id="agent-host">—</b></div>
             </div>
           </article>
           <article class="card">
@@ -101,6 +90,11 @@
             </div>
           </article>
         </div>
+        <div class="section-head">
+          <h2>집 에이전트</h2>
+          <button class="ghost" id="agent-update-dash" type="button">원격 업데이트</button>
+        </div>
+        <div class="list" id="dash-agents"></div>
         <div class="section-head">
           <h2>서버</h2>
           <button class="primary" id="add-from-dash" type="button">서버 추가</button>
@@ -205,7 +199,7 @@
               <input id="invite-email" type="email" placeholder="invite@example.com" required>
               <button class="primary" type="submit">초대</button>
             </form>
-            <p class="hint">이메일을 초대하면 상대방이 그 주소로만 가입·합류할 수 있습니다. 초대 전에는 가입이 거부됩니다.</p>
+            <p class="hint">초대한 이메일은 허용 목록에 올라갑니다. 그다음 Supabase → Authentication → Users에서 같은 이메일로 사용자를 만든 뒤, 상대방이 로그인하면 집에 합류합니다. 앱에서 회원가입은 할 수 없습니다.</p>
             <p class="hint" id="owner-only-hint" hidden>집 이름·초대·에이전트 토큰·속도/슬랙 설정은 owner만 변경할 수 있습니다.</p>
           </article>
           <article class="card">
@@ -213,13 +207,27 @@
             <div class="rule"><span>Supabase</span><span class="meta">계정, 집, 서버 목록</span></div>
             <div class="env">SUPABASE_URL<br>SUPABASE_ANON_KEY</div>
             <div class="rule"><span>집 에이전트</span><span class="meta" id="agent-status">미연결</span></div>
+            <div class="kv" id="agent-status-panel" style="margin-top:12px">
+              <div class="kv-row"><span>상태</span><b id="agent-online">미연결</b></div>
+              <div class="kv-row"><span>마지막 응답</span><b id="agent-seen-settings">—</b></div>
+              <div class="kv-row"><span>버전</span><b id="agent-version-settings">—</b></div>
+              <div class="kv-row"><span>호스트</span><b id="agent-host-settings">—</b></div>
+              <div class="kv-row"><span>런타임</span><b id="agent-runtime">—</b></div>
+              <div class="kv-row"><span>pm2</span><b id="agent-pm2">—</b></div>
+              <div class="kv-row"><span>원격 업데이트</span><b id="agent-remote-update">꺼짐</b></div>
+            </div>
+            <div class="row-actions" style="margin-top:12px">
+              <button class="ghost" id="agent-refresh" type="button">상태 새로고침</button>
+              <button class="primary" id="agent-update" type="button">원격 업데이트</button>
+            </div>
+            <p class="hint">에이전트가 폴링하면 호스트·버전·pm2 상태가 자동으로 채워집니다. 원격 업데이트는 에이전트에 <span class="env">AGENT_ALLOW_REMOTE_UPDATE=true</span> 와 <span class="env">PM2_APP_NAME</span> 이 필요합니다.</p>
             <label class="field" style="margin-top:12px">
               <span>에이전트 URL (선택, Tunnel)</span>
-              <input id="agent-url" type="url" placeholder="https://janitor-agent.example.com">
+              <input id="agent-url" type="url" placeholder="https://agent.example.com">
             </label>
             <label class="field">
-              <span>에이전트 호스트 설명</span>
-              <input id="agent-host-label" type="text" placeholder="cloudflared와 같은 항상 켜진 1대">
+              <span>에이전트 호스트 설명 (비우면 에이전트 hostname 자동)</span>
+              <input id="agent-host-label" type="text" placeholder="자동">
             </label>
             <button class="primary" id="mint-agent-token" type="button">에이전트 토큰 발급</button>
             <p class="hint" id="agent-token-hint">토큰은 한 번만 보여 줍니다. AGENT_TOKEN 환경 변수로 에이전트에 넣으세요.</p>

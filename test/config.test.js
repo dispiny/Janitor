@@ -56,3 +56,17 @@ test("security lockdown migration removes self-join and scopes agent RPCs", () =
   );
   assert.match(revoke, /revoke all on function public\.agent_poll\(text\) from public, anon, authenticated/);
 });
+
+test("admin-provisioned auth: no client signUp UI", () => {
+  const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+  const js = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+  assert.doesNotMatch(html, /id="panel-signup"|id="tab-signup"/);
+  assert.doesNotMatch(js, /\.signUp\s*\(/);
+  const mig = readFileSync(
+    new URL("../supabase/migrations/20261014090000_admin_provisioned_users.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(mig, /auth_provision_allowlist/);
+  assert.match(mig, /adminProvisionedOnly/);
+  assert.match(mig, /invite_house_member/);
+});

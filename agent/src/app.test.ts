@@ -10,6 +10,10 @@ const config: AgentConfig = {
   tunnelHostname: "agent.example.trycloudflare.com",
   pollMs: 15000,
   speedProbeBytes: 2_000_000,
+  speedTestDurationMs: 12_000,
+  speedTestConnections: 4,
+  speedTestProvider: "auto",
+  allowRemoteUpdate: false,
 };
 
 describe("home agent HTTP API", () => {
@@ -35,13 +39,16 @@ describe("home agent HTTP API", () => {
     const body = (await res.json()) as {
       service: string;
       tunnelHostname: string;
-      capabilities: { wakeManual: boolean; wakeUplus: boolean };
+      capabilities: { wakeManual: boolean; wakeUplus: boolean; remoteUpdate: boolean };
+      runtime?: { version?: string };
       uplusConfigured?: boolean;
     };
     assert.equal(body.service, "janitor-home-agent");
     assert.equal(body.tunnelHostname, "agent.example.trycloudflare.com");
     assert.equal(body.capabilities.wakeManual, true);
     assert.equal(body.capabilities.wakeUplus, false);
+    assert.equal(body.capabilities.remoteUpdate, false);
+    assert.ok(body.runtime?.version);
     assert.equal(body.uplusConfigured, undefined);
   });
 

@@ -362,6 +362,104 @@ function latestSpeed() {
   return state.speeds.length ? state.speeds[state.speeds.length - 1] : null;
 }
 
+function agentStatus(house = state.house) {
+  return house?.agent_status && typeof house.agent_status === "object" ? house.agent_status : {};
+}
+
+function isAgentConnected(house = state.house) {
+  return Boolean(house?.agent_last_seen_at) &&
+    Date.now() - new Date(house.agent_last_seen_at).getTime() < 5 * 60_000;
+}
+
+function formatUptime(sec) {
+  const n = Number(sec);
+  if (!Number.isFinite(n) || n < 0) return "—";
+  if (n < 60) return `${Math.floor(n)}초`;
+  if (n < 3600) return `${Math.floor(n / 60)}분`;
+  if (n < 86400) return `${Math.floor(n / 3600)}시간`;
+  return `${Math.floor(n / 86400)}일`;
+}
+
+function renderAgents() {
+  const host = $("dash-agents");
+  if (!host) return;
+  host.innerHTML = "";
+  const house = state.house;
+  if (!house?.agent_token_hash && !house?.agent_last_seen_at) {
+    const empty = document.createElement("p");
+    empty.className = "sub";
+    empty.textContent = "아직 등록된 에이전트가 없습니다. 설정에서 토큰을 발급해 pm2로 실행하세요.";
+    host.appendChild(empty);
+    return;
+  }
+
+  const status = agentStatus(house);
+  const online = isAgentConnected(house);
+  const card = document.createElement("article");
+  card.className = "card server";
+  card.innerHTML = `
+    <div class="server-top">
+      <div>
+        <h3></h3>
+        <p class="sub"></p>
+      </div>
+      <span class="badge"></span>
+    </div>
+    <div class="kv"></div>
+    <div class="row-actions"></div>
+  `;
+  const title = status.hostname || house.agent_host_label || "집 에이전트";
+  card.querySelector("h3").textContent = title;
+  card.querySelector(".sub").textContent = online
+    ? `온라인 · v${status.version || "?"} · ${status.pm2 ? "pm2" : "process"}`
+    : "오프라인 · 마지막 폴링 이후 응답 없음";
+  const badge = card.querySelector(".badge");
+  badge.textContent = online ? "온라인" : "오프라인";
+  badge.classList.add(online ? "on" : "off");
+
+  const kv = card.querySelector(".kv");
+  const rows = [
+    ["마지막 응답", house.agent_last_seen_at ? relativeTime(house.agent_last_seen_at) : "—"],
+    ["버전", status.version || "—"],
+    ["Node", status.node || "—"],
+    ["가동", formatUptime(status.uptimeSec)],
+    ["pm2", status.pm2 ? (status.pm2Name || "예") : "아니오"],
+    ["원격 업데이트", status.remoteUpdate ? "가능" : "꺼짐"],
+  ];
+  for (const [label, value] of rows) {
+    const row = document.createElement("div");
+    row.className = "kv-row";
+    row.innerHTML = "<span></span><b></b>";
+    row.querySelector("span").textContent = label;
+    row.querySelector("b").textContent = value;
+    kv.appendChild(row);
+  }
+
+  const actions = card.querySelector(".row-actions");
+  const updateBtn = document.createElement("button");
+  updateBtn.type = "button";
+  updateBtn.className = "primary";
+  updateBtn.textContent = "원격 업데이트";
+  updateBtn.disabled = !online || !status.remoteUpdate;
+  updateBtn.addEventListener("click", () => enqueueAgentUpdate());
+  actions.appendChild(updateBtn);
+  host.appendChild(card);
+}
+
+async function enqueueAgentUpdate() {
+  if (!state.house) return;
+  if (!isAgentConnected()) {
+    showToast("에이전트가 오프라인입니다.");
+    return;
+  }
+  if (!agentStatus().remoteUpdate) {
+    showToast("에이전트에서 AGENT_ALLOW_REMOTE_UPDATE=true 가 필요합니다.");
+    return;
+  }
+  await enqueueJob("agent_update");
+  showToast("업데이트 작업을 넣었습니다. 잠시 후 상태가 갱신됩니다.");
+}
+
 function render() {
   if (!state.house) return;
   const house = state.house;
@@ -370,8 +468,8 @@ function render() {
   const down = latest ? Number(latest.down_mbps) : null;
   const up = latest ? Number(latest.up_mbps) : null;
   const dropped = down != null && down < threshold;
-  const agentConnected = Boolean(house.agent_last_seen_at) &&
-    Date.now() - new Date(house.agent_last_seen_at).getTime() < 5 * 60_000;
+  const agentConnected = isAgentConnected(house);
+  const status = agentStatus(house);
 
   $("house-name").textContent = house.name;
   $("dash-title").textContent = house.name;
@@ -380,7 +478,22 @@ function render() {
   $("public-ip").textContent = house.public_ip || "—";
   $("public-ip-meta").textContent = relativeTime(house.public_ip_checked_at);
   $("agent-seen").textContent = house.agent_last_seen_at ? relativeTime(house.agent_last_seen_at) : "미연결";
-  $("agent-status").textContent = house.agent_host_label || (agentConnected ? "연결됨" : "미연결");
+  $("agent-version").textContent = status.version || "—";
+  $("agent-host").textContent = status.hostname || house.agent_host_label || "—";
+  $("agent-status").textContent = agentConnected
+    ? (status.hostname || house.agent_host_label || "연결됨")
+    : "미연결";
+  $("agent-online").textContent = agentConnected ? "온라인" : "오프라인";
+  $("agent-seen-settings").textContent = house.agent_last_seen_at ? relativeTime(house.agent_last_seen_at) : "—";
+  $("agent-version-settings").textContent = status.version || "—";
+  $("agent-host-settings").textContent = status.hostname || house.agent_host_label || "—";
+  $("agent-runtime").textContent = status.node
+    ? `${status.node} · ${status.platform}/${status.arch} · ${formatUptime(status.uptimeSec)}`
+    : "—";
+  $("agent-pm2").textContent = status.pm2
+    ? (status.pm2Name ? `예 (${status.pm2Name})` : "예")
+    : (status.reportedAt ? "아니오" : "—");
+  $("agent-remote-update").textContent = status.remoteUpdate ? "가능" : "꺼짐";
   $("net-status").textContent = agentConnected ? "에이전트 연결됨" : "에이전트 대기";
   $("net-dot").style.background = agentConnected ? "#12a150" : "#948e84";
   $("dash-down").textContent = down == null ? "—" : down.toFixed(1);
@@ -389,8 +502,18 @@ function render() {
   $("speed-up").textContent = up == null ? "—" : up.toFixed(1);
   $("threshold").value = String(threshold);
   $("slack-channel").value = house.slack_channel || "#homelab";
-  $("agent-url").value = house.agent_url || "";
-  $("agent-host-label").value = house.agent_host_label || "";
+  if (document.activeElement !== $("agent-url")) {
+    $("agent-url").value = house.agent_url || "";
+  }
+  if (document.activeElement !== $("agent-host-label")) {
+    $("agent-host-label").value = house.agent_host_label || status.hostname || "";
+  }
+  const updateEnabled = agentConnected && Boolean(status.remoteUpdate);
+  ["agent-update", "agent-update-dash"].forEach((id) => {
+    const btn = $(id);
+    if (btn) btn.disabled = !updateEnabled;
+  });
+  renderAgents();
   $("dash-threshold").textContent = down == null
     ? `임계값 ${threshold} Mbps · 측정 대기`
     : dropped
@@ -572,23 +695,10 @@ async function init() {
     ? "웹훅이 Worker에 설정되어 있습니다."
     : "웹훅이 아직 없습니다. wrangler secret put SLACK_WEBHOOK_URL";
 
-  const bootstrap = Boolean(state.config.bootstrapAllowed);
-  const hookReady = Boolean(state.config.inviteHookReady);
-  const signupBlocked = state.config.inviteOnly && !hookReady && !bootstrap;
-  $("signup-house-field").hidden = !bootstrap;
-  $("signup-house").required = bootstrap;
-  let signupHint = bootstrap
-    ? "아직 계정이 없어 첫 집 주인을 만들 수 있습니다. 이후에는 초대받은 이메일만 가입됩니다."
-    : "설정에서 초대한 이메일만 가입됩니다. 아무나 계정을 만들 수 없습니다.";
-  if (state.config.inviteOnly && !hookReady) {
-    signupHint +=
-      " ⚠ Supabase Auth Hook(Before User Created → hook_invite_only_signup)이 연결되지 않아 초대 가입을 막았습니다. 대시보드에서 활성화하세요.";
+  if (state.config.inviteOnly && !state.config.inviteHookReady) {
+    $("login-hint").textContent =
+      "회원가입은 없습니다. Supabase에서 사용자를 만든 뒤 로그인하세요. ⚠ Auth Hook(Before User Created → hook_invite_only_signup)이 연결되지 않았을 수 있습니다.";
   }
-  $("signup-hint").textContent = signupHint;
-  $("tab-signup").disabled = signupBlocked;
-  $("panel-signup").querySelectorAll("input, button").forEach((el) => {
-    el.disabled = signupBlocked;
-  });
 
   state.sb = createClient(state.config.supabaseUrl, state.config.supabaseAnonKey, {
     auth: { persistSession: true, autoRefreshToken: true },
@@ -609,21 +719,6 @@ async function init() {
     }
   });
 
-  $("tab-login").addEventListener("click", () => {
-    $("tab-login").setAttribute("aria-selected", "true");
-    $("tab-signup").setAttribute("aria-selected", "false");
-    $("panel-login").hidden = false;
-    $("panel-signup").hidden = true;
-    $("auth-title").textContent = "로그인";
-  });
-  $("tab-signup").addEventListener("click", () => {
-    $("tab-signup").setAttribute("aria-selected", "true");
-    $("tab-login").setAttribute("aria-selected", "false");
-    $("panel-signup").hidden = false;
-    $("panel-login").hidden = true;
-    $("auth-title").textContent = "초대 가입";
-  });
-
   $("panel-login").addEventListener("submit", async (event) => {
     event.preventDefault();
     $("login-error").textContent = "";
@@ -636,42 +731,6 @@ async function init() {
     }
     state.session = data.session;
     await enterApp();
-  });
-
-  $("panel-signup").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    $("signup-error").textContent = "";
-    const email = $("signup-email").value.trim();
-    const password = $("signup-password").value;
-    const bootstrap = Boolean(state.config?.bootstrapAllowed);
-    const houseName = $("signup-house").value.trim();
-    if (bootstrap && !houseName) {
-      $("signup-error").textContent = "첫 계정은 집 이름이 필요합니다.";
-      return;
-    }
-    const { data, error } = await state.sb.auth.signUp({ email, password });
-    if (error) {
-      $("signup-error").textContent = error.message.includes("초대")
-        ? error.message
-        : (error.message || "가입이 거부되었습니다. 초대받은 이메일인지 확인하세요.");
-      return;
-    }
-    if (!data.session) {
-      $("signup-error").textContent = "이메일 확인이 필요합니다. 받은편지함을 확인한 뒤 로그인해 주세요.";
-      return;
-    }
-    state.session = data.session;
-    if (bootstrap) {
-      await api("/api/bootstrap", {
-        method: "POST",
-        body: JSON.stringify({ houseName }),
-      });
-      await enterApp();
-      showToast(`${houseName} 을 만들었습니다. 이후 가입은 초대만 가능합니다.`);
-      return;
-    }
-    await enterApp();
-    showToast("가입했습니다. 초대된 집으로 합류합니다.");
   });
 
   $("logout").addEventListener("click", async () => {
@@ -820,7 +879,7 @@ async function init() {
         body: JSON.stringify({ houseId: state.house.id, email }),
       });
       $("invite-email").value = "";
-      showToast(`${email} 초대를 저장했습니다. 상대방이 같은 이메일로 로그인하면 합류합니다.`);
+      showToast(`${email} 을 허용 목록에 넣었습니다. Supabase에서 사용자를 만든 뒤 로그인하면 합류합니다.`);
       await refresh();
     } catch (err) {
       showToast(err.message);
@@ -842,6 +901,17 @@ async function init() {
     showToast("에이전트 토큰을 발급했습니다.");
     await refresh();
   });
+
+  $("agent-refresh")?.addEventListener("click", () => refresh());
+  $("agent-update")?.addEventListener("click", () => enqueueAgentUpdate());
+  $("agent-update-dash")?.addEventListener("click", () => enqueueAgentUpdate());
+
+  // Keep agent/online status fresh while the console is open.
+  clearInterval(init._agentTimer);
+  init._agentTimer = setInterval(() => {
+    if (!state.session || !state.house) return;
+    refresh().catch(() => {});
+  }, 30_000);
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {

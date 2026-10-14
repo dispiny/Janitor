@@ -4,8 +4,11 @@ import { bearerAuth } from "./auth.js";
 import type { AgentConfig } from "./config.js";
 import { isAgentError } from "./errors.js";
 import { checkHttp } from "./health-check.js";
+import { log } from "./log.js";
 import { resolvePublicIp } from "./public-ip.js";
 import { tick } from "./poller.js";
+import { requestLog } from "./request-log.js";
+import { collectRuntimeStatus } from "./runtime-status.js";
 import { assertAllowedHttpUrl } from "./url-guard.js";
 import { sendMagicPacket } from "./wol/magic-packet.js";
 import { wakeViaUplus } from "./wol/uplus.js";
@@ -41,6 +44,7 @@ export function createApp(config: AgentConfig) {
   const app = new Hono<AppEnv>();
   const uplusReady = Boolean(config.uplusRouterUrl && config.uplusRouterPassword);
 
+  app.use("*", requestLog());
   app.use("*", async (c, next) => {
     c.set("config", config);
     await next();
@@ -52,15 +56,18 @@ export function createApp(config: AgentConfig) {
   app.use("/v1/*", bearerAuth(config));
 
   app.get("/v1/status", (c) => {
+    const runtime = collectRuntimeStatus(config);
     return c.json({
       ok: true,
       service: "janitor-home-agent",
       tunnelHostname: config.tunnelHostname ?? null,
+      runtime,
       capabilities: {
         wakeManual: true,
         wakeUplus: uplusReady,
         publicIp: true,
         httpCheck: true,
+        remoteUpdate: runtime.remoteUpdate,
       },
     });
   });
@@ -95,17 +102,39 @@ export function createApp(config: AgentConfig) {
 
     try {
       if (parsed.data.mode === "manual") {
+        log("wake.received", {
+          phase: "received",
+          mode: "manual",
+          mac: parsed.data.mac,
+          broadcast: parsed.data.broadcast,
+          port: parsed.data.port,
+        });
+        log("wake.processing", {
+          phase: "processing",
+          mode: "manual",
+          mac: parsed.data.mac,
+        });
         const result = await sendMagicPacket(parsed.data);
+        log("wake.complete", { phase: "complete", ...result });
         return c.json(result);
       }
 
+      log("wake.received", { phase: "received", mode: "uplus", device: parsed.data.device });
+      log("wake.processing", { phase: "processing", mode: "uplus", device: parsed.data.device });
       const result = await wakeViaUplus({
         device: parsed.data.device,
         routerUrl: config.uplusRouterUrl,
         routerPassword: config.uplusRouterPassword,
       });
+      log("wake.complete", { phase: "complete", ...result });
       return c.json(result);
     } catch (error) {
+      log("wake.failed", {
+        phase: "failed",
+        mode: parsed.data.mode,
+        error: error instanceof Error ? error.message : "wake failed",
+        code: isAgentError(error) ? error.code : undefined,
+      });
       if (isAgentError(error)) {
         if (error.code === "UPLUS_NOT_IMPLEMENTED") {
           return c.json(

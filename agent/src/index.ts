@@ -1,8 +1,10 @@
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
 import { readConfig } from "./config.js";
+import { loadDotEnv } from "./load-env.js";
 import { startPoller } from "./poller.js";
 
+loadDotEnv();
 const config = readConfig();
 const app = createApp(config);
 
