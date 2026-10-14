@@ -4,6 +4,7 @@ import { buildOpsAlert, notifySlack } from "./slack";
 import { anonClient, serviceClient, sha256Hex, userClient } from "./supabase";
 import { isUuid, parseServiceInput, type ServiceInput } from "./services";
 import { assertHttpUrl } from "./urls";
+import { parseWol } from "./wol";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const json = (data: unknown, status = 200) =>
@@ -101,8 +102,7 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
         name: string;
         role?: string;
         manageUrl?: string;
-        wolMode: "off" | "uplus" | "manual";
-        wolUplusDevice?: string;
+        wolMode: "off" | "manual";
         wolMac?: string;
         wolBroadcast?: string;
         wolPort?: number;
@@ -114,12 +114,14 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
       };
 
       if (!body.houseId || !body.name?.trim()) return json({ error: "이름과 집이 필요합니다." }, 400);
-      if (body.wolMode === "uplus" && !body.wolUplusDevice?.trim()) {
-        return json({ error: "U+ 공유기에 등록된 장치 이름이 필요합니다." }, 400);
+      const wolMode = body.wolMode === "manual" ? "manual" : "off";
+      if (body.wolMode && body.wolMode !== "manual" && body.wolMode !== "off") {
+        return json({ error: "Wake-on-LAN은 MAC 등록 방식만 지원합니다." }, 400);
       }
-      if (body.wolMode === "manual" && !/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/.test(body.wolMac || "")) {
-        return json({ error: "수동 등록에는 MAC 주소가 필요합니다." }, 400);
-      }
+      const wol = wolMode === "manual"
+        ? parseWol({ mac: body.wolMac, broadcast: body.wolBroadcast, port: body.wolPort })
+        : null;
+      if (wol && !wol.ok) return json({ error: wol.error }, 400);
       if (body.pveEnabled && (!body.pveHost?.trim() || !body.pveNode?.trim())) {
         return json({ error: "Proxmox 연동에는 API 주소와 노드 이름이 필요합니다." }, 400);
       }
@@ -140,11 +142,10 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
           name: body.name.trim(),
           role: (body.role || "").trim(),
           manage_url: manage.url,
-          wol_mode: body.wolMode,
-          wol_uplus_device: body.wolUplusDevice?.trim() || null,
-          wol_mac: body.wolMac?.trim() || null,
-          wol_broadcast: body.wolBroadcast?.trim() || null,
-          wol_port: body.wolPort ?? 9,
+          wol_mode: wolMode,
+          wol_mac: wol?.ok ? wol.mac : null,
+          wol_broadcast: wol?.ok ? wol.broadcast : null,
+          wol_port: wol?.ok ? wol.port : 9,
           pve_enabled: Boolean(body.pveEnabled),
           pve_host: pveHost,
           pve_node: body.pveNode?.trim() || null,

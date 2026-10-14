@@ -3,8 +3,6 @@ export type AgentConfig = {
   port: number;
   host: string;
   tunnelHostname?: string;
-  uplusRouterUrl?: string;
-  uplusRouterPassword?: string;
   healthcheckToken?: string;
   /** When set, agent polls the Worker job queue with AGENT_TOKEN. */
   janitorApiUrl?: string;
@@ -71,8 +69,6 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
     port,
     host: env.HOST?.trim() || "0.0.0.0",
     tunnelHostname: env.CF_TUNNEL_HOSTNAME?.trim() || undefined,
-    uplusRouterUrl: env.UPLUS_ROUTER_URL?.trim() || undefined,
-    uplusRouterPassword: env.UPLUS_ROUTER_PASSWORD?.trim() || undefined,
     healthcheckToken: env.HEALTHCHECK_TOKEN?.trim() || undefined,
     janitorApiUrl: env.JANITOR_API_URL?.trim().replace(/\/$/, "") || undefined,
     pollMs,

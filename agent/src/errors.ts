@@ -1,8 +1,4 @@
-export type AgentErrorCode =
-  | "UPLUS_NOT_CONFIGURED"
-  | "UPLUS_DEVICE_REQUIRED"
-  | "UPLUS_NOT_IMPLEMENTED"
-  | "PUBLIC_IP_FAILED";
+export type AgentErrorCode = "PUBLIC_IP_FAILED";
 
 export class AgentError extends Error {
   readonly code: AgentErrorCode;

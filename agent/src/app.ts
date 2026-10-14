@@ -10,22 +10,21 @@ import { tick } from "./poller.js";
 import { requestLog } from "./request-log.js";
 import { collectRuntimeStatus } from "./runtime-status.js";
 import { assertAllowedHttpUrl } from "./url-guard.js";
-import { sendMagicPacket } from "./wol/magic-packet.js";
-import { wakeViaUplus } from "./wol/uplus.js";
+import { DEFAULT_BROADCAST, DEFAULT_WOL_PORT, normalizeMac, sendMagicPacket } from "./wol/magic-packet.js";
 
-const wakeSchema = z.discriminatedUnion("mode", [
-  z.object({
-    mode: z.literal("manual"),
-    mac: z.string().regex(/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/),
-    // Default matches common U+ home LAN; override when the subnet differs.
-    broadcast: z.string().min(1).default("192.168.0.255"),
-    port: z.number().int().min(1).max(65535).default(9),
-  }),
-  z.object({
-    mode: z.literal("uplus"),
-    device: z.string().min(1),
-  }),
-]);
+const wakeSchema = z.object({
+  mode: z.literal("manual").default("manual"),
+  mac: z.string().refine((value) => {
+    try {
+      normalizeMac(value);
+      return true;
+    } catch {
+      return false;
+    }
+  }, "invalid MAC address"),
+  broadcast: z.string().ip({ version: "v4" }).default(DEFAULT_BROADCAST),
+  port: z.number().int().min(1).max(65535).default(DEFAULT_WOL_PORT),
+});
 
 const checkSchema = z.object({
   url: z.string().url(),
@@ -42,7 +41,6 @@ export type AppEnv = {
 
 export function createApp(config: AgentConfig) {
   const app = new Hono<AppEnv>();
-  const uplusReady = Boolean(config.uplusRouterUrl && config.uplusRouterPassword);
 
   app.use("*", requestLog());
   app.use("*", async (c, next) => {
@@ -64,7 +62,6 @@ export function createApp(config: AgentConfig) {
       runtime,
       capabilities: {
         wakeManual: true,
-        wakeUplus: uplusReady,
         publicIp: true,
         httpCheck: true,
         remoteUpdate: runtime.remoteUpdate,
@@ -101,54 +98,23 @@ export function createApp(config: AgentConfig) {
     }
 
     try {
-      if (parsed.data.mode === "manual") {
-        log("wake.received", {
-          phase: "received",
-          mode: "manual",
-          mac: parsed.data.mac,
-          broadcast: parsed.data.broadcast,
-          port: parsed.data.port,
-        });
-        log("wake.processing", {
-          phase: "processing",
-          mode: "manual",
-          mac: parsed.data.mac,
-        });
-        const result = await sendMagicPacket(parsed.data);
-        log("wake.complete", { phase: "complete", ...result });
-        return c.json(result);
-      }
-
-      log("wake.received", { phase: "received", mode: "uplus", device: parsed.data.device });
-      log("wake.processing", { phase: "processing", mode: "uplus", device: parsed.data.device });
-      const result = await wakeViaUplus({
-        device: parsed.data.device,
-        routerUrl: config.uplusRouterUrl,
-        routerPassword: config.uplusRouterPassword,
+      log("wake.received", {
+        phase: "received",
+        mode: "manual",
+        mac: parsed.data.mac,
+        broadcast: parsed.data.broadcast,
+        port: parsed.data.port,
       });
+      log("wake.processing", { phase: "processing", mode: "manual", mac: parsed.data.mac });
+      const result = await sendMagicPacket(parsed.data);
       log("wake.complete", { phase: "complete", ...result });
       return c.json(result);
     } catch (error) {
       log("wake.failed", {
         phase: "failed",
-        mode: parsed.data.mode,
+        mode: "manual",
         error: error instanceof Error ? error.message : "wake failed",
-        code: isAgentError(error) ? error.code : undefined,
       });
-      if (isAgentError(error)) {
-        if (error.code === "UPLUS_NOT_IMPLEMENTED") {
-          return c.json(
-            { error: "uplus_not_implemented", message: error.message },
-            501,
-          );
-        }
-        if (
-          error.code === "UPLUS_NOT_CONFIGURED" ||
-          error.code === "UPLUS_DEVICE_REQUIRED"
-        ) {
-          return c.json({ error: error.code.toLowerCase(), message: error.message }, 400);
-        }
-      }
       return c.json(
         { error: error instanceof Error ? error.message : "wake failed" },
         500,

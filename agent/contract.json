@@ -15,7 +15,9 @@
       "method": "GET",
       "path": "/healthz",
       "auth": false,
-      "response": { "ok": true }
+      "response": {
+        "ok": true
+      }
     },
     {
       "method": "GET",
@@ -27,12 +29,10 @@
         "tunnelHostname": "string|null",
         "capabilities": {
           "wakeManual": "boolean",
-          "wakeUplus": "boolean",
           "publicIp": "boolean",
           "httpCheck": "boolean"
         }
-      },
-      "notes": "wakeUplus is true only when UPLUS_ROUTER_* env is set"
+      }
     },
     {
       "method": "GET",
@@ -48,19 +48,13 @@
       "method": "POST",
       "path": "/v1/wake",
       "auth": true,
-      "body": [
-        {
-          "mode": "manual",
-          "mac": "AA:BB:CC:DD:EE:FF",
-          "broadcast": "192.168.0.255",
-          "port": 9
-        },
-        {
-          "mode": "uplus",
-          "device": "거실-PC"
-        }
-      ],
-      "notes": "uplus returns 501 until router provider is implemented"
+      "body": {
+        "mode": "manual",
+        "mac": "AA:BB:CC:DD:EE:FF",
+        "broadcast": "255.255.255.255",
+        "port": 9
+      },
+      "notes": "mode is optional; mac accepts ':' '-' or bare hex; broadcast defaults to 255.255.255.255, port to 9; packet is sent 3 times"
     },
     {
       "method": "POST",

@@ -8,7 +8,7 @@ const state = {
   svcFilter: "all",
   svcQuery: "",
   editingServiceId: null,
-  wol: "uplus",
+  wol: "manual",
   config: null,
   sb: null,
   session: null,
@@ -71,10 +71,14 @@ function relativeTime(iso) {
   return new Date(iso).toLocaleString("ko-KR");
 }
 
+function canWake(server) {
+  return server.wol.mode === "manual" && Boolean(server.wol.mac);
+}
+
 function wolLabel(server) {
-  if (server.wol_mode === "uplus") return "U+ 공유기";
-  if (server.wol_mode === "manual") return "수동 MAC";
-  return "WOL 없음";
+  if (!canWake(server)) return "WOL 없음";
+  const target = server.wol.broadcast || "255.255.255.255";
+  return `WOL ${server.wol.mac} → ${target}:${server.wol.port || 9}`;
 }
 
 function mapServer(row) {
@@ -85,7 +89,6 @@ function mapServer(row) {
     on: row.is_on,
     wol: {
       mode: row.wol_mode,
-      device: row.wol_uplus_device,
       mac: row.wol_mac,
       broadcast: row.wol_broadcast,
       port: row.wol_port,
@@ -213,7 +216,7 @@ function serverRow(server, index, withDelete) {
   row.querySelector(".role").textContent = server.role || "역할 없음";
   row.querySelector(".meta").textContent = wolLabel(server);
   const actions = row.querySelector(".actions");
-  if (server.wol.mode !== "off") {
+  if (canWake(server)) {
     const wake = document.createElement("button");
     wake.className = "text-btn live";
     wake.type = "button";
@@ -699,21 +702,22 @@ function applyOwnerUi() {
 }
 
 function setWol(mode) {
-  state.wol = mode;
+  state.wol = mode === "manual" ? "manual" : "off";
   document.querySelectorAll("#wol-choice button").forEach((button) => {
-    button.setAttribute("aria-pressed", String(button.dataset.wol === mode));
+    button.setAttribute("aria-pressed", String(button.dataset.wol === state.wol));
   });
-  $("wol-uplus").hidden = mode !== "uplus";
-  $("wol-manual").hidden = mode !== "manual";
+  $("wol-manual").hidden = state.wol !== "manual";
+  if (state.wol === "manual") $("srv-mac").required = true;
+  else $("srv-mac").required = false;
 }
 
 function openServerModal() {
   $("server-form").reset();
-  $("srv-bcast").value = "192.168.0.255";
+  $("srv-bcast").value = "";
   $("srv-port").value = "9";
   $("srv-error").textContent = "";
   $("pve-fields").hidden = true;
-  setWol("uplus");
+  setWol("manual");
   $("server-modal").hidden = false;
   $("srv-name").focus();
 }
@@ -904,10 +908,9 @@ async function init() {
           role: $("srv-role").value.trim(),
           manageUrl: $("srv-url").value.trim(),
           wolMode: state.wol,
-          wolUplusDevice: $("srv-uplus").value.trim(),
           wolMac: $("srv-mac").value.trim(),
           wolBroadcast: $("srv-bcast").value.trim(),
-          wolPort: Number($("srv-port").value),
+          wolPort: Number($("srv-port").value) || 9,
           pveEnabled: $("srv-pve").checked,
           pveHost: $("srv-pve-host").value.trim(),
           pveNode: $("srv-pve-node").value.trim(),

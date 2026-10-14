@@ -1,12 +1,22 @@
 import dgram from "node:dgram";
 
-const MAC_RE = /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/;
+/** Limited broadcast reaches the whole local segment without knowing the subnet. */
+export const DEFAULT_BROADCAST = "255.255.255.255";
+export const DEFAULT_WOL_PORT = 9;
+const SEND_REPEATS = 3;
+const SEND_GAP_MS = 100;
 
-export function parseMac(mac: string): Buffer {
-  if (!MAC_RE.test(mac)) {
+/** Accepts AA:BB:CC:DD:EE:FF, AA-BB-CC-DD-EE-FF (Windows ipconfig) or AABBCCDDEEFF. */
+export function normalizeMac(mac: string): string {
+  const hex = (mac || "").trim().replace(/[:\-.\s]/g, "");
+  if (!/^[0-9A-Fa-f]{12}$/.test(hex)) {
     throw new Error("invalid MAC address");
   }
-  return Buffer.from(mac.split(":").map((part) => Number.parseInt(part, 16)));
+  return hex.toUpperCase().match(/../g)!.join(":");
+}
+
+export function parseMac(mac: string): Buffer {
+  return Buffer.from(normalizeMac(mac).split(":").map((part) => Number.parseInt(part, 16)));
 }
 
 export function buildMagicPacket(mac: string): Buffer {
@@ -26,39 +36,38 @@ export type MagicPacketResult = {
   broadcast: string;
   port: number;
   bytes: number;
+  sent: number;
 };
 
 export async function sendMagicPacket(input: {
   mac: string;
-  broadcast: string;
-  port: number;
+  broadcast?: string | null;
+  port?: number | null;
 }): Promise<MagicPacketResult> {
-  const packet = buildMagicPacket(input.mac);
+  const mac = normalizeMac(input.mac);
+  const broadcast = input.broadcast?.trim() || DEFAULT_BROADCAST;
+  const port = input.port || DEFAULT_WOL_PORT;
+  const packet = buildMagicPacket(mac);
   const socket = dgram.createSocket("udp4");
 
-  await new Promise<void>((resolve, reject) => {
-    socket.once("error", reject);
-    socket.bind(() => {
-      try {
+  try {
+    await new Promise<void>((resolve, reject) => {
+      socket.once("error", reject);
+      socket.bind(() => {
         socket.setBroadcast(true);
-        socket.send(packet, input.port, input.broadcast, (error) => {
-          socket.close();
-          if (error) reject(error);
-          else resolve();
-        });
-      } catch (error) {
-        socket.close();
-        reject(error);
-      }
+        resolve();
+      });
     });
-  });
+    // Repeat because UDP is fire-and-forget and some NICs miss the first frame.
+    for (let i = 0; i < SEND_REPEATS; i += 1) {
+      await new Promise<void>((resolve, reject) => {
+        socket.send(packet, port, broadcast, (error) => (error ? reject(error) : resolve()));
+      });
+      if (i < SEND_REPEATS - 1) await new Promise((r) => setTimeout(r, SEND_GAP_MS));
+    }
+  } finally {
+    socket.close();
+  }
 
-  return {
-    ok: true,
-    mode: "manual",
-    mac: input.mac.toUpperCase(),
-    broadcast: input.broadcast,
-    port: input.port,
-    bytes: packet.length,
-  };
+  return { ok: true, mode: "manual", mac, broadcast, port, bytes: packet.length, sent: SEND_REPEATS };
 }

@@ -10,7 +10,7 @@
 | 계층 | 담당 | 비밀값 예 |
 | --- | --- | --- |
 | Cloud Worker + Supabase | 로그인, 집/서버/서비스 CRUD, Slack 알림 | `SUPABASE_*`, `SLACK_WEBHOOK_URL` |
-| 집 에이전트 | LAN에서만 가능한 작업 | `AGENT_TOKEN`, `UPLUS_*`, `HEALTHCHECK_TOKEN` |
+| 집 에이전트 | LAN에서만 가능한 작업 | `AGENT_TOKEN`, `HEALTHCHECK_TOKEN` |
 
 대시보드와 Worker는 서버·서비스 **목록을 갖지 않는** 에이전트를 호출합니다.  
 목록·기대 상태 코드는 Supabase에 두고, 에이전트에는 그때그때 URL/MAC만 넘깁니다. 더미 데이터는 넣지 않습니다.
@@ -28,8 +28,7 @@ agent/
     public-ip.ts
     health-check.ts
     wol/
-      magic-packet.ts    # 수동 MAC WOL
-      uplus.ts           # U+ 자리 (501; CGI 추측 없음)
+      magic-packet.ts    # MAC magic packet (기본 브로드캐스트 255.255.255.255, 3회 송신)
 ```
 
 기본 리슨: `0.0.0.0:3920`  
@@ -50,8 +49,6 @@ agent/
 | `PORT` | no | 기본 `3920` |
 | `HOST` | no | 기본 `0.0.0.0` |
 | `CF_TUNNEL_HOSTNAME` | no | 상태 응답에 광고할 Tunnel 호스트명 |
-| `UPLUS_ROUTER_URL` | no | U+ 공유기 관리 URL (U+ WOL용) |
-| `UPLUS_ROUTER_PASSWORD` | no | 공유기 비밀번호. API 응답에 절대 포함하지 않음 |
 | `HEALTHCHECK_TOKEN` | no | `useHealthToken: true`일 때 헬스 요청에 붙임 |
 | `AGENT_ALLOW_REMOTE_UPDATE` | no | `true`면 대시보드 원격 업데이트(job) 허용 |
 | `PM2_APP_NAME` | 원격갱신 시 | pm2 프로세스 이름 (예: `ops-agent`) |
@@ -100,8 +97,7 @@ curl -sS -H "Authorization: Bearer $AGENT_TOKEN" http://127.0.0.1:3920/v1/status
 
 | 기능 | 상태 |
 | --- | --- |
-| 수동 MAC magic packet | 동작 (UDP magic packet 송신) |
-| U+ 공유기 WOL | **미구현** (`501 uplus_not_implemented`) |
+| MAC Wake-on-LAN | 동작 (UDP magic packet 브로드캐스트, 기본 3회) |
 | 공인 IP 조회 | 동작 (`ipify` → `ifconfig.me` 폴백) |
 | HTTP 헬스 체크 | 동작 |
 | 요청 로그 | 모든 HTTP·job을 `received` → `processing` → `complete`/`failed` 3단계로 stdout JSON (토큰 비출력) |

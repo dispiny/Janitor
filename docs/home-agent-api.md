@@ -40,15 +40,13 @@ Authorization: Bearer <AGENT_TOKEN>
   "tunnelHostname": "agent.example.com",
   "capabilities": {
     "wakeManual": true,
-    "wakeUplus": false,
     "publicIp": true,
     "httpCheck": true
   }
 }
 ```
 
-`capabilities.wakeUplus`는 `UPLUS_ROUTER_URL`과 `UPLUS_ROUTER_PASSWORD`가 둘 다 있을 때만 `true`입니다.  
-설정돼 있어도 U+ 제공자가 아직이면 wake 호출은 `501`입니다.
+Wake는 MAC magic packet만 지원합니다 (`wakeManual`).
 
 ---
 
@@ -71,23 +69,21 @@ Authorization: Bearer <AGENT_TOKEN>
 
 ## `POST /v1/wake`
 
-서버를 깨웁니다. body는 `mode`로 구분합니다.
-
-### 수동 MAC
+서버를 MAC magic packet으로 깨웁니다. (`mode`는 생략 가능, `manual`만 허용)
 
 ```json
 {
   "mode": "manual",
   "mac": "02:00:00:00:00:10",
-  "broadcast": "192.168.0.255",
+  "broadcast": "255.255.255.255",
   "port": 9
 }
 ```
 
 | 필드 | 기본값 | 설명 |
 | --- | --- | --- |
-| `mac` | (필수) | `AA:BB:CC:DD:EE:FF` |
-| `broadcast` | `192.168.0.255` | UDP 브로드캐스트 주소 (U+ 가정 기본 LAN; 서브넷이 다르면 명시) |
+| `mac` | (필수) | `AA:BB:…`, `AA-BB-…`(Windows), 또는 12자리 hex |
+| `broadcast` | `255.255.255.255` | UDP 브로드캐스트. 서브넷이 다르면 예: `192.168.219.255` |
 | `port` | `9` | WOL 포트 |
 
 성공 예:
@@ -97,30 +93,14 @@ Authorization: Bearer <AGENT_TOKEN>
   "ok": true,
   "mode": "manual",
   "mac": "02:00:00:00:00:10",
-  "broadcast": "192.168.0.255",
+  "broadcast": "255.255.255.255",
   "port": 9,
-  "bytes": 102
+  "bytes": 102,
+  "sent": 3
 }
 ```
 
-잘못된 MAC/body → `400`.
-
-### U+ 공유기
-
-```json
-{
-  "mode": "uplus",
-  "device": "거실-PC"
-}
-```
-
-공유기 비밀번호는 body에 넣지 않습니다. 런타임 env만 읽습니다.
-
-| 상황 | 상태 | body |
-| --- | --- | --- |
-| env 미설정 | `400` | `{ "error": "uplus_not_configured", "message": "..." }` |
-| device 누락 | `400` | `{ "error": "uplus_device_required", "message": "..." }` |
-| 제공자 미구현 | `501` | `{ "error": "uplus_not_implemented", "message": "..." }` |
+잘못된 MAC/body → `400`. 패킷은 같은 내용으로 3번 보냅니다.
 
 ---
 

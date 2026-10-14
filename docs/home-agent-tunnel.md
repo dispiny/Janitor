@@ -22,11 +22,11 @@
    cloudflared  -->  http://127.0.0.1:3920  (janitor-home-agent)
 ```
 
-같은 기기가 U+ 공유기·매직 패킷 브로드캐스트에 닿을 수 있어야 합니다.
+같은 기기가 대상 PC와 같은 LAN에 있어 매직 패킷 브로드캐스트에 닿을 수 있어야 합니다 (Docker라면 `network_mode: host` 권장).
 
 ## 에이전트 쪽
 
-1. `agent/.env`에 `AGENT_TOKEN`, 필요 시 `UPLUS_*` / `HEALTHCHECK_TOKEN` 설정
+1. `agent/.env`에 `AGENT_TOKEN`, 필요 시 `HEALTHCHECK_TOKEN` 설정
 2. `CF_TUNNEL_HOSTNAME`에 Tunnel이 광고하는 호스트명을 넣으면 `/v1/status`에 표시됩니다
 3. `npm start` (또는 systemd/docker로 상시 실행)
 4. 로컬에서 `curl http://127.0.0.1:3920/healthz`로 기동 확인
@@ -56,9 +56,8 @@ Worker 환경에는 다음만 둡니다.
 ## 보안 체크리스트
 
 - Tunnel hostname을 알아도 `AGENT_TOKEN` 없이는 `/v1/*` 호출 불가
-- 토큰·공유기 비밀번호·헬스 토큰을 git / 시안 UI에 넣지 않음
+- 토큰·헬스 토큰을 git / 시안 UI에 넣지 않음
 - `/healthz`는 프로브용이므로 민정보 없이 `ok`만 반환
-- U+ 비밀번호는 에이전트 프로세스 env에만 존재; wake API body에 포함 금지
 
 ## Worker 연동 순서 (권장)
 
