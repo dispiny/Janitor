@@ -16,6 +16,7 @@ const state = {
   membershipRole: null,
   members: [],
   servers: [],
+  pveServers: [],
   services: [],
   guests: [],
   speeds: [],
@@ -82,6 +83,11 @@ function wolLabel(server) {
   return `WOL ${server.wol.mac} → ${target}:${server.wol.port || 9}`;
 }
 
+/** An API-only Proxmox link: its nodes are listed as servers, the link itself is not a machine. */
+function isPveLink(server) {
+  return Boolean(server.pve && !server.pve.node && !server.parentId && server.wol.mode === "off");
+}
+
 function mapServer(row) {
   return {
     id: row.id,
@@ -95,6 +101,8 @@ function mapServer(row) {
       port: row.wol_port,
     },
     manageUrl: row.manage_url,
+    parentId: row.pve_parent_id || null,
+    pveNode: row.pve_node || null,
     pve: row.pve_enabled
       ? {
           host: row.pve_host,
@@ -154,6 +162,7 @@ async function loadHouseData() {
     state.membershipRole = null;
     state.members = [];
     state.servers = [];
+    state.pveServers = [];
     state.services = [];
     state.guests = [];
     state.speeds = [];
@@ -176,7 +185,9 @@ async function loadHouseData() {
 
   state.members = members.data || [];
   state.guests = guests.data || [];
-  state.servers = (servers.data || []).map(mapServer);
+  const allServers = (servers.data || []).map(mapServer);
+  state.pveServers = allServers.filter((s) => s.pve);
+  state.servers = allServers.filter((s) => !isPveLink(s));
   state.services = (services.data || []).map(mapService);
   state.speeds = (speeds.data || []).reverse();
   state.jobs = jobs.data || [];
@@ -219,7 +230,13 @@ function serverRow(server, index, withDelete) {
   `;
   row.querySelector(".name").textContent = server.name;
   row.querySelector(".role").textContent = server.role || "역할 없음";
-  row.querySelector(".meta").textContent = wolLabel(server);
+  if (server.parentId) {
+    const guests = state.guests.filter((g) => g.server_id === server.parentId && g.node === server.pveNode);
+    const running = guests.filter((g) => g.is_on).length;
+    row.querySelector(".meta").textContent = `Proxmox 노드 · 게스트 ${guests.length}개 (실행 ${running})`;
+  } else {
+    row.querySelector(".meta").textContent = wolLabel(server);
+  }
   const actions = row.querySelector(".actions");
   if (canWake(server)) {
     const wake = document.createElement("button");
@@ -236,7 +253,8 @@ function serverRow(server, index, withDelete) {
   manage.disabled = !server.manageUrl && !(server.pve && server.pve.host);
   manage.addEventListener("click", () => openManage(server.manageUrl || server.pve?.host || ""));
   actions.appendChild(manage);
-  if (withDelete) {
+  // Node rows are re-created on every sync; they go away by unlinking the API in settings.
+  if (withDelete && !server.parentId) {
     const remove = document.createElement("button");
     remove.className = "text-btn";
     remove.type = "button";
@@ -340,14 +358,15 @@ function renderList(target, items, factory, emptyText) {
 function renderPveLinks() {
   const host = $("pve-links");
   host.replaceChildren();
-  state.servers.filter((s) => s.pve).forEach((server) => {
+  state.pveServers.forEach((server) => {
     const guests = server.pve.guests || [];
-    const nodes = new Set(guests.map((g) => g.node).filter(Boolean));
+    const nodeCount = state.servers.filter((s) => s.parentId === server.id).length
+      || new Set(guests.map((g) => g.node).filter(Boolean)).size;
     const row = document.createElement("div");
     row.className = "member";
     const label = document.createElement("span");
-    label.textContent = guests.length
-      ? `${server.name} · 노드 ${nodes.size || 1}개 · 게스트 ${guests.length}개`
+    label.textContent = nodeCount || guests.length
+      ? `${server.name} · 노드 ${nodeCount || 1}개 · 게스트 ${guests.length}개`
       : `${server.name} · 동기화 대기 중`;
     const actions = document.createElement("div");
     actions.className = "row-actions";
@@ -360,7 +379,7 @@ function renderPveLinks() {
     remove.className = "text-btn";
     remove.type = "button";
     remove.textContent = "해제";
-    remove.addEventListener("click", () => confirmAndRun(`${server.name} Proxmox 연동을 해제할까요?`, async () => {
+    remove.addEventListener("click", () => confirmAndRun(`${server.name} Proxmox 연동을 해제할까요? 자동 등록된 노드 서버도 함께 빠집니다.`, async () => {
       await api(`/api/servers/${server.id}`, { method: "DELETE" });
       showToast(`${server.name} 연동을 해제했습니다.`);
       await refresh();
@@ -374,7 +393,7 @@ function renderPveLinks() {
 function renderPve() {
   const host = $("dash-pve");
   host.replaceChildren();
-  const linked = state.servers.filter((s) => s.pve);
+  const linked = state.pveServers;
   if (!linked.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
@@ -810,7 +829,7 @@ function render() {
 
   const visible = state.servers.filter((server) => {
     if (state.filter === "off") return !server.on;
-    if (state.filter === "pve") return Boolean(server.pve);
+    if (state.filter === "pve") return Boolean(server.pve || server.parentId);
     return true;
   });
   renderList($("dash-servers"), state.servers, (s, i) => serverRow(s, i, false), "등록된 서버가 없습니다. 서버 추가로 집을 채우면 됩니다.");
@@ -1305,7 +1324,7 @@ async function init() {
       $("pve-link-form").reset();
       showToast(
         data.syncQueued
-          ? "Proxmox를 연동했습니다. 에이전트가 곧 전체 노드·게스트를 가져옵니다."
+          ? "Proxmox를 연동했습니다. 에이전트가 곧 노드를 서버로 등록하고 게스트를 가져옵니다."
           : "Proxmox를 연동했습니다.",
       );
       await refresh();
