@@ -122,8 +122,13 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
         ? parseWol({ mac: body.wolMac, broadcast: body.wolBroadcast, port: body.wolPort })
         : null;
       if (wol && !wol.ok) return json({ error: wol.error }, 400);
-      if (body.pveEnabled && (!body.pveHost?.trim() || !body.pveNode?.trim())) {
-        return json({ error: "Proxmox 연동에는 API 주소와 노드 이름이 필요합니다." }, 400);
+      if (body.pveEnabled) {
+        if (!body.pveHost?.trim()) {
+          return json({ error: "Proxmox 연동에는 API 주소가 필요합니다." }, 400);
+        }
+        if (!body.pveTokenId?.trim() || !body.pveTokenSecret?.trim()) {
+          return json({ error: "Proxmox API 토큰 ID와 비밀이 필요합니다. 노드는 비우면 전체가 긁힙니다." }, 400);
+        }
       }
 
       const manage = assertHttpUrl(body.manageUrl || "", { allowEmpty: true, field: "관리 페이지 주소" });
@@ -141,13 +146,15 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
           house_id: body.houseId,
           name: body.name.trim(),
           role: (body.role || "").trim(),
-          manage_url: manage.url,
+          // Default manage page to the PVE UI when the field was left empty.
+          manage_url: manage.url || pveHost || "",
           wol_mode: wolMode,
           wol_mac: wol?.ok ? wol.mac : null,
           wol_broadcast: wol?.ok ? wol.broadcast : null,
           wol_port: wol?.ok ? wol.port : 9,
           pve_enabled: Boolean(body.pveEnabled),
           pve_host: pveHost,
+          // null/empty = agent discovers every node under this API.
           pve_node: body.pveNode?.trim() || null,
           pve_token_id: body.pveTokenId?.trim() || null,
         })
@@ -164,7 +171,17 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
         if (secretError) return json({ error: secretError.message }, 400);
       }
 
-      return json({ server });
+      let syncQueued = false;
+      if (body.pveEnabled) {
+        const { error: jobError } = await auth.sb!.from("agent_jobs").insert({
+          house_id: body.houseId,
+          kind: "pve_sync",
+          payload: { serverId: server.id },
+        });
+        syncQueued = !jobError;
+      }
+
+      return json({ server, syncQueued }, 201);
     }
 
     if (path.startsWith("/api/servers/") && req.method === "DELETE") {
