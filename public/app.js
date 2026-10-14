@@ -425,7 +425,7 @@ function renderPve() {
 function healthSummary() {
   const down = state.services.filter((s) => s.ok === false);
   if (!down.length) return "";
-  const channel = state.house?.slack_channel || "#homelab";
+  const channel = state.house?.slack_channel || "#alerts-janitor";
   return `${down.map((s) => s.name).join(", ")} 헬스 체크가 기대 응답이 아닙니다. ${channel} 알림 대상입니다.`;
 }
 
@@ -709,7 +709,7 @@ function render() {
   $("speed-down").textContent = down == null ? "—" : down.toFixed(1);
   $("speed-up").textContent = up == null ? "—" : up.toFixed(1);
   $("threshold").value = String(threshold);
-  $("slack-channel").value = house.slack_channel || "#homelab";
+  $("slack-channel").value = house.slack_channel || "#alerts-janitor";
   const mins = (sec, fallback) => {
     const n = Number(sec);
     return String(Number.isFinite(n) ? Math.round(n / 60) : fallback);
@@ -1176,7 +1176,7 @@ async function init() {
       return;
     }
     const threshold = Number($("threshold").value);
-    const channel = $("slack-channel").value.trim() || "#homelab";
+    const channel = $("slack-channel").value.trim() || "#alerts-janitor";
     const toSec = (id, fallbackMin) => {
       const raw = Number($(id).value);
       const mins = Number.isFinite(raw) ? Math.max(0, Math.min(10080, Math.floor(raw))) : fallbackMin;

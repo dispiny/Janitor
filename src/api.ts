@@ -443,7 +443,7 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
           alert_state?: Record<string, { since?: string; name?: string; kind?: string }>;
         };
       } | null)?.house;
-      const channel = house?.slack_channel || "#homelab";
+      const channel = house?.slack_channel || "#alerts-janitor";
       const reportedServices = (body.services || []).map((s) => ({
         id: s.id,
         name: s.name || s.id || "서비스",
