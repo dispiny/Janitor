@@ -13,6 +13,7 @@ const config: AgentConfig = {
   speedTestConnections: 4,
   speedTestProvider: "auto",
   allowRemoteUpdate: false,
+  deployOnUpdate: false,
 };
 
 describe("request logging", () => {

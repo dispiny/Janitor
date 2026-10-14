@@ -13,6 +13,7 @@ test("collectRuntimeStatus reports version and host", () => {
     speedTestConnections: 4,
     speedTestProvider: "auto",
     allowRemoteUpdate: true,
+    deployOnUpdate: true,
     pm2AppName: "ops-agent",
   });
   assert.equal(typeof status.version, "string");
@@ -20,6 +21,7 @@ test("collectRuntimeStatus reports version and host", () => {
   assert.match(status.node, /^v\d+/);
   assert.ok(status.hostname.length > 0);
   assert.equal(status.remoteUpdate, true);
+  assert.equal(status.deployOnUpdate, true);
   assert.equal(status.pm2Name, "ops-agent");
   assert.equal(status.pollMs, 15000);
 });

@@ -17,6 +17,7 @@ export type AgentRuntimeStatus = {
   pm2: boolean;
   pm2Name: string | null;
   remoteUpdate: boolean;
+  deployOnUpdate: boolean;
   reportedAt: string;
 };
 
@@ -52,6 +53,7 @@ export function collectRuntimeStatus(cfg: AgentConfig): AgentRuntimeStatus {
     pm2,
     pm2Name,
     remoteUpdate: Boolean(cfg.allowRemoteUpdate),
+    deployOnUpdate: Boolean(cfg.allowRemoteUpdate && cfg.deployOnUpdate),
     reportedAt: new Date().toISOString(),
   };
 }

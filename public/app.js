@@ -491,6 +491,7 @@ function renderAgents() {
     ["가동", formatUptime(status.uptimeSec)],
     ["pm2", status.pm2 ? (status.pm2Name || "예") : "아니오"],
     ["원격 업데이트", status.remoteUpdate ? "가능" : "꺼짐"],
+    ["Worker 배포", status.deployOnUpdate ? "업데이트 시 실행" : "꺼짐"],
   ];
   for (const [label, value] of rows) {
     const row = document.createElement("div");
@@ -505,7 +506,7 @@ function renderAgents() {
   const updateBtn = document.createElement("button");
   updateBtn.type = "button";
   updateBtn.className = "primary";
-  updateBtn.textContent = "원격 업데이트";
+  updateBtn.textContent = status.deployOnUpdate ? "업데이트 · 배포" : "원격 업데이트";
   updateBtn.disabled = !online || !status.remoteUpdate;
   updateBtn.addEventListener("click", () => enqueueAgentUpdate());
   actions.appendChild(updateBtn);
@@ -523,7 +524,11 @@ async function enqueueAgentUpdate() {
     return;
   }
   await enqueueJob("agent_update");
-  showToast("업데이트 작업을 넣었습니다. 잠시 후 상태가 갱신됩니다.");
+  showToast(
+    agentStatus().deployOnUpdate
+      ? "업데이트·배포 작업을 넣었습니다. git pull 후 npm run deploy가 실행됩니다."
+      : "업데이트 작업을 넣었습니다. 잠시 후 상태가 갱신됩니다.",
+  );
 }
 
 function render() {
@@ -560,6 +565,7 @@ function render() {
     ? (status.pm2Name ? `예 (${status.pm2Name})` : "예")
     : (status.reportedAt ? "아니오" : "—");
   $("agent-remote-update").textContent = status.remoteUpdate ? "가능" : "꺼짐";
+  $("agent-deploy-on-update").textContent = status.deployOnUpdate ? "업데이트 시 실행" : "꺼짐";
   $("net-status").textContent = agentConnected ? "에이전트 연결됨" : "에이전트 대기";
   $("net-dot").style.background = agentConnected ? "#12a150" : "#948e84";
   $("dash-down").textContent = down == null ? "—" : down.toFixed(1);
