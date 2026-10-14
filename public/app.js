@@ -19,6 +19,7 @@ const state = {
   services: [],
   guests: [],
   speeds: [],
+  jobs: [],
 };
 
 function isOwner() {
@@ -156,18 +157,21 @@ async function loadHouseData() {
     state.services = [];
     state.guests = [];
     state.speeds = [];
+    state.jobs = [];
     return;
   }
   state.house = membership.houses;
   state.membershipRole = membership.role || "member";
   const houseId = state.house.id;
 
-  const [members, servers, services, guests, speeds] = await Promise.all([
+  const [members, servers, services, guests, speeds, jobs] = await Promise.all([
     state.sb.from("house_members").select("*").eq("house_id", houseId),
     state.sb.from("servers").select("*").eq("house_id", houseId).order("created_at"),
     state.sb.from("services").select("*").eq("house_id", houseId).order("created_at"),
     state.sb.from("pve_guests").select("*").eq("house_id", houseId),
     state.sb.from("speed_samples").select("*").eq("house_id", houseId).order("recorded_at", { ascending: false }).limit(12),
+    state.sb.from("agent_jobs").select("id, kind, status, error, result, created_at, updated_at")
+      .eq("house_id", houseId).order("created_at", { ascending: false }).limit(40),
   ]);
 
   state.members = members.data || [];
@@ -175,6 +179,7 @@ async function loadHouseData() {
   state.servers = (servers.data || []).map(mapServer);
   state.services = (services.data || []).map(mapService);
   state.speeds = (speeds.data || []).reverse();
+  state.jobs = jobs.data || [];
 }
 
 function bars(target, values, threshold) {
@@ -513,6 +518,137 @@ function renderAgents() {
   host.appendChild(card);
 }
 
+function agentLogEntries(house = state.house) {
+  const raw = house?.agent_log_tail;
+  return Array.isArray(raw) ? raw : [];
+}
+
+function formatLogTime(iso) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString("ko-KR", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  } catch {
+    return String(iso);
+  }
+}
+
+function logDetailText(entry) {
+  if (!entry || typeof entry !== "object") return "";
+  const skip = new Set(["ts", "event"]);
+  const parts = [];
+  for (const [key, value] of Object.entries(entry)) {
+    if (skip.has(key) || value == null || value === "") continue;
+    if (typeof value === "object") {
+      try {
+        parts.push(`${key}=${JSON.stringify(value)}`);
+      } catch {
+        parts.push(`${key}=[object]`);
+      }
+    } else {
+      parts.push(`${key}=${value}`);
+    }
+  }
+  return parts.join(" · ");
+}
+
+function isFailLog(entry) {
+  const event = String(entry?.event || "");
+  const phase = String(entry?.phase || "");
+  return phase === "failed" || event.includes("failed") || event.includes("rejected") || Boolean(entry?.error);
+}
+
+function renderAgentLogs() {
+  const host = $("agent-log-list");
+  if (!host) return;
+  host.replaceChildren();
+  const entries = agentLogEntries().slice().reverse();
+  if (!entries.length) {
+    const empty = document.createElement("div");
+    empty.className = "agent-log-empty";
+    empty.textContent = isAgentConnected()
+      ? "아직 수집된 이벤트가 없습니다. 다음 폴링 이후부터 쌓입니다."
+      : "에이전트가 보고한 로그가 없습니다. 연결 후 폴링되면 여기에 표시됩니다.";
+    host.appendChild(empty);
+    return;
+  }
+  for (const entry of entries) {
+    const row = document.createElement("div");
+    row.className = "log-line" + (isFailLog(entry) ? " fail" : "");
+    const top = document.createElement("div");
+    top.className = "log-top";
+    const ev = document.createElement("span");
+    ev.className = "log-event";
+    ev.textContent = entry.event || "event";
+    const time = document.createElement("span");
+    time.className = "log-time";
+    time.textContent = formatLogTime(entry.ts);
+    top.append(ev, time);
+    row.appendChild(top);
+    const detail = logDetailText(entry);
+    if (detail) {
+      const d = document.createElement("div");
+      d.className = "log-detail";
+      d.textContent = detail;
+      row.appendChild(d);
+    }
+    host.appendChild(row);
+  }
+}
+
+function renderAgentJobs() {
+  const host = $("agent-job-list");
+  if (!host) return;
+  host.replaceChildren();
+  if (!state.jobs.length) {
+    const empty = document.createElement("div");
+    empty.className = "job-log-empty";
+    empty.textContent = "작업 이력이 없습니다.";
+    host.appendChild(empty);
+    return;
+  }
+  for (const job of state.jobs) {
+    const row = document.createElement("div");
+    const failed = job.status === "error";
+    row.className = "job-line" + (failed ? " fail" : "");
+    const top = document.createElement("div");
+    top.className = "log-top";
+    const kind = document.createElement("span");
+    kind.className = "log-kind";
+    kind.textContent = job.kind || "job";
+    const time = document.createElement("span");
+    time.className = "log-time";
+    time.textContent = formatLogTime(job.updated_at || job.created_at);
+    top.append(kind, time);
+    row.appendChild(top);
+    const status = document.createElement("div");
+    status.className = "log-status " + (job.status || "");
+    status.textContent = job.status || "—";
+    row.appendChild(status);
+    const detailBits = [];
+    if (job.error) detailBits.push(job.error);
+    else if (job.result && typeof job.result === "object") {
+      try {
+        detailBits.push(JSON.stringify(job.result).slice(0, 400));
+      } catch {
+        /* ignore */
+      }
+    }
+    if (detailBits.length) {
+      const d = document.createElement("div");
+      d.className = "log-detail";
+      d.textContent = detailBits.join(" · ");
+      row.appendChild(d);
+    }
+    host.appendChild(row);
+  }
+}
+
 async function enqueueAgentUpdate() {
   if (!state.house) return;
   if (!isAgentConnected()) {
@@ -659,6 +795,8 @@ function render() {
   $("svc-count-unknown").textContent = String(state.services.filter((s) => s.ok == null).length);
   $("check-all").disabled = !state.services.length;
   renderPve();
+  renderAgentLogs();
+  renderAgentJobs();
   applyOwnerUi();
 
   const members = $("members");
@@ -687,7 +825,7 @@ function render() {
   document.querySelectorAll(".nav-btn").forEach((button) => {
     button.setAttribute("aria-current", button.dataset.view === state.view ? "page" : "false");
   });
-  ["dashboard", "servers", "services", "speed", "settings"].forEach((view) => {
+  ["dashboard", "servers", "services", "speed", "logs", "settings"].forEach((view) => {
     $("view-" + view).hidden = state.view !== view;
   });
 }
@@ -1110,6 +1248,7 @@ async function init() {
   });
 
   $("agent-refresh")?.addEventListener("click", () => refresh());
+  $("logs-refresh")?.addEventListener("click", () => refresh());
   $("agent-update")?.addEventListener("click", () => enqueueAgentUpdate());
   $("agent-update-dash")?.addEventListener("click", () => enqueueAgentUpdate());
 

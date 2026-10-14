@@ -214,6 +214,68 @@
       letter-spacing: -0.02em;
       text-align: right;
     }
+    .agent-log, .job-log {
+      margin-top: 12px;
+      max-height: min(62vh, 560px);
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--wash);
+      padding: 8px;
+      display: grid;
+      gap: 6px;
+    }
+    .agent-log-empty, .job-log-empty {
+      color: var(--muted);
+      font-size: 13px;
+      padding: 16px 10px;
+    }
+    .log-line, .job-line {
+      display: grid;
+      gap: 2px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #fff;
+      border: 1px solid transparent;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .log-line.fail, .job-line.fail {
+      border-color: #f0c7c2;
+      background: #fff8f7;
+    }
+    .log-line .log-top, .job-line .log-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: baseline;
+    }
+    .log-line .log-event, .job-line .log-kind {
+      font-family: var(--mono);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      word-break: break-all;
+    }
+    .log-line .log-time, .job-line .log-time {
+      color: var(--faint);
+      white-space: nowrap;
+      font-size: 11px;
+    }
+    .log-line .log-detail, .job-line .log-detail {
+      font-family: var(--mono);
+      color: var(--muted);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .job-line .log-status {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .job-line .log-status.done { color: var(--ok); }
+    .job-line .log-status.error { color: var(--danger); }
     .speeds { display: flex; gap: 28px; margin-top: 6px; }
     .speeds b { font-size: 26px; font-weight: 600; letter-spacing: -0.03em; }
     .speeds span { display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
