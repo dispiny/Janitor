@@ -9,7 +9,7 @@ describe("syncPveGuests", () => {
       const url = String(input);
       calls.push(url);
       if (url.endsWith("/nodes")) {
-        return Response.json({ data: [{ node: "pve-a" }, { node: "pve-b" }] });
+        return Response.json({ data: [{ node: "pve-a", status: "online" }, { node: "pve-b", status: "offline" }] });
       }
       if (url.includes("/nodes/pve-a/qemu")) {
         return Response.json({ data: [{ name: "haos", vmid: 100, status: "running" }] });
@@ -35,6 +35,10 @@ describe("syncPveGuests", () => {
     });
 
     assert.deepEqual(result.nodes, ["pve-a", "pve-b"]);
+    assert.deepEqual(result.discovered, [
+      { node: "pve-a", online: true },
+      { node: "pve-b", online: false },
+    ]);
     assert.equal(result.guests.length, 3);
     assert.ok(result.guests.some((g) => g.name === "haos" && g.node === "pve-a" && g.is_on));
     assert.ok(result.guests.some((g) => g.name === "dns" && g.node === "pve-a" && !g.is_on));
@@ -62,6 +66,7 @@ describe("syncPveGuests", () => {
       fetchImpl,
     });
     assert.deepEqual(result.nodes, ["edge"]);
+    assert.equal(result.discovered, undefined);
     assert.equal(result.guests[0]?.name, "only");
   });
 });
