@@ -21,6 +21,11 @@ export type AgentConfig = {
   speedTestProvider: "fast" | "cloudflare" | "auto";
   /** Opt-in: allow dashboard-triggered git pull + npm install + pm2 restart. */
   allowRemoteUpdate: boolean;
+  /**
+   * When remote update runs, also `npm run deploy` at the git root (wrangler).
+   * Needs CLOUDFLARE_API_TOKEN (or wrangler login) on the agent host.
+   */
+  deployOnUpdate: boolean;
   /** pm2 process name used for remote restart (defaults to PM2_APP_NAME / process.name). */
   pm2AppName?: string;
   /** Repo/workdir for remote updates (defaults to process.cwd()). */
@@ -63,6 +68,11 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
   const speedTestProvider = providerRaw as "fast" | "cloudflare" | "auto";
 
   const allowRemoteUpdate = /^(1|true|yes)$/i.test(env.AGENT_ALLOW_REMOTE_UPDATE?.trim() || "");
+  // Default on when remote update is allowed — dashboard "업데이트" should ship the Worker too.
+  const deployRaw = env.AGENT_DEPLOY_ON_UPDATE?.trim();
+  const deployOnUpdate = deployRaw
+    ? /^(1|true|yes)$/i.test(deployRaw)
+    : allowRemoteUpdate;
 
   return {
     token,
@@ -78,6 +88,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
     speedTestConnections,
     speedTestProvider,
     allowRemoteUpdate,
+    deployOnUpdate,
     pm2AppName: env.PM2_APP_NAME?.trim() || undefined,
     agentRepoDir: env.AGENT_REPO_DIR?.trim() || undefined,
   };

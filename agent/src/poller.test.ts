@@ -17,6 +17,7 @@ test("tick is a no-op reentry guard when already running", async () => {
         speedTestConnections: 2,
         speedTestProvider: "auto",
         allowRemoteUpdate: false,
+        deployOnUpdate: false,
       }),
     /fetch|ECONNREFUSED|failed|error|9/i,
   );

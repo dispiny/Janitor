@@ -9,9 +9,12 @@ export type SelfUpdateResult = {
   repoDir: string;
   packageDir: string;
   gitPull?: string;
+  rootNpmInstall?: string;
+  deploy?: string;
   npmInstall?: string;
   restartScheduled: boolean;
   pm2AppName: string | null;
+  deployOnUpdate: boolean;
   note: string;
 };
 
@@ -66,6 +69,11 @@ async function findGitRoot(start: string): Promise<string | null> {
   }
 }
 
+async function npmInstallIn(dir: string): Promise<string> {
+  const hasLock = await exists(join(dir, "package-lock.json"));
+  return hasLock ? run("npm", ["ci"], dir) : run("npm", ["install"], dir);
+}
+
 /** Schedule pm2 restart after the current tick can report job results. */
 export function schedulePm2Restart(appName: string, delayMs = 2500): void {
   setTimeout(() => {
@@ -88,11 +96,29 @@ export async function runSelfUpdate(cfg: AgentConfig): Promise<SelfUpdateResult>
   const packageDir = cfg.agentRepoDir || process.cwd();
   const gitRoot = (await findGitRoot(packageDir)) || packageDir;
   let gitPull: string | undefined;
+  let rootNpmInstall: string | undefined;
+  let deploy: string | undefined;
   let npmInstall: string | undefined;
 
   if (await exists(join(gitRoot, ".git"))) {
     await run("git", ["fetch", "--all", "--prune"], gitRoot);
     gitPull = await run("git", ["pull", "--ff-only"], gitRoot);
+  }
+
+  // Worker deploy from monorepo root (package.json "deploy": "wrangler deploy").
+  if (cfg.deployOnUpdate) {
+    if (!(await exists(join(gitRoot, "package.json")))) {
+      throw new Error(`repo root package.json not found in ${gitRoot} — cannot npm run deploy`);
+    }
+    if (!process.env.CLOUDFLARE_API_TOKEN?.trim() && !process.env.CLOUDFLARE_API_KEY?.trim()) {
+      throw new Error(
+        "AGENT_DEPLOY_ON_UPDATE is on but CLOUDFLARE_API_TOKEN is missing on the agent host",
+      );
+    }
+    rootNpmInstall = await npmInstallIn(gitRoot);
+    console.log(JSON.stringify({ event: "self_update.deploy.start", cwd: gitRoot }));
+    deploy = await run("npm", ["run", "deploy"], gitRoot, 300_000);
+    console.log(JSON.stringify({ event: "self_update.deploy.complete", cwd: gitRoot }));
   }
 
   if (!(await exists(join(packageDir, "package.json")))) {
@@ -101,10 +127,7 @@ export async function runSelfUpdate(cfg: AgentConfig): Promise<SelfUpdateResult>
 
   // Never --omit=dev: older package.json kept tsx in devDependencies; wiping it
   // breaks `node --import tsx` / pm2 after restart.
-  const hasLock = await exists(join(packageDir, "package-lock.json"));
-  npmInstall = hasLock
-    ? await run("npm", ["ci"], packageDir)
-    : await run("npm", ["install"], packageDir);
+  npmInstall = await npmInstallIn(packageDir);
 
   const loader = join(packageDir, "node_modules/tsx/dist/loader.mjs");
   if (!(await exists(loader))) {
@@ -123,16 +146,22 @@ export async function runSelfUpdate(cfg: AgentConfig): Promise<SelfUpdateResult>
   const restartScheduled = Boolean(pm2AppName);
   if (pm2AppName) schedulePm2Restart(pm2AppName);
 
+  const notes = [
+    restartScheduled ? `pm2 restart ${pm2AppName} scheduled` : "Updated files; set PM2_APP_NAME to auto-restart under pm2",
+    cfg.deployOnUpdate ? "Worker npm run deploy finished" : "Worker deploy skipped (AGENT_DEPLOY_ON_UPDATE=false)",
+  ];
+
   return {
     ok: true,
     repoDir: gitRoot,
     packageDir,
     gitPull,
+    rootNpmInstall,
+    deploy,
     npmInstall,
     restartScheduled,
     pm2AppName,
-    note: restartScheduled
-      ? `pm2 restart ${pm2AppName} scheduled`
-      : "Updated files; set PM2_APP_NAME to auto-restart under pm2",
+    deployOnUpdate: cfg.deployOnUpdate,
+    note: notes.join("; "),
   };
 }

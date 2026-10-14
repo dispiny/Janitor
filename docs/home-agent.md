@@ -51,8 +51,10 @@ agent/
 | `CF_TUNNEL_HOSTNAME` | no | 상태 응답에 광고할 Tunnel 호스트명 |
 | `HEALTHCHECK_TOKEN` | no | `useHealthToken: true`일 때 헬스 요청에 붙임 |
 | `AGENT_ALLOW_REMOTE_UPDATE` | no | `true`면 대시보드 원격 업데이트(job) 허용 |
+| `AGENT_DEPLOY_ON_UPDATE` | no | `true`면 업데이트 시 저장소 루트에서 `npm run deploy` (기본: remote update와 동일) |
+| `CLOUDFLARE_API_TOKEN` | 배포 시 | Worker 배포용. 에이전트 호스트 env / pm2에 설정 |
 | `PM2_APP_NAME` | 원격갱신 시 | pm2 프로세스 이름 (예: `ops-agent`) |
-| `AGENT_REPO_DIR` | no | git pull/npm 대상 디렉터리 (기본 cwd) |
+| `AGENT_REPO_DIR` | no | agent 패키지 디렉터리 (기본 cwd). git root는 자동 탐색해 deploy |
 
 샘플: [`agent/.env.example`](../agent/.env.example).  
 `.env`와 실제 비밀값은 git에 커밋하지 않습니다.
@@ -106,7 +108,7 @@ curl -sS -H "Authorization: Bearer $AGENT_TOKEN" http://127.0.0.1:3920/v1/status
 | 요청 로그 | 모든 HTTP·job을 `received` → `processing` → `complete`/`failed` 3단계로 stdout JSON (토큰 비출력) |
 | Job poller (`JANITOR_API_URL`) | 동작 (`tick` 동시 실행 가드, 인증 poll/report) |
 | 런타임 상태 보고 | 버전·hostname·pm2·uptime을 매 tick 보고, UI 자동 표시 |
-| 원격 업데이트 | `agent_update` job → git pull + npm + `pm2 restart` (opt-in) |
+| 원격 업데이트 · 배포 | `agent_update` → git pull → (opt) 루트 `npm run deploy` → agent npm → `pm2 restart` |
 
 pm2 예시 (agent/ 에서):
 

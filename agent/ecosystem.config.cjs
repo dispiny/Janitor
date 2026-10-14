@@ -19,7 +19,9 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         AGENT_ALLOW_REMOTE_UPDATE: "true",
+        AGENT_DEPLOY_ON_UPDATE: "true",
         PM2_APP_NAME: "janitor-agent",
+        // Set in agent/.env or pm2 env: CLOUDFLARE_API_TOKEN=...
       },
     },
   ],
