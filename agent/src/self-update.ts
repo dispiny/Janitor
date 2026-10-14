@@ -9,6 +9,7 @@ export type SelfUpdateResult = {
   repoDir: string;
   packageDir: string;
   gitPull?: string;
+  gitStash?: string;
   rootNpmInstall?: string;
   deploy?: string;
   npmInstall?: string;
@@ -96,13 +97,37 @@ export async function runSelfUpdate(cfg: AgentConfig): Promise<SelfUpdateResult>
   const packageDir = cfg.agentRepoDir || process.cwd();
   const gitRoot = (await findGitRoot(packageDir)) || packageDir;
   let gitPull: string | undefined;
+  let gitStash: string | undefined;
   let rootNpmInstall: string | undefined;
   let deploy: string | undefined;
   let npmInstall: string | undefined;
 
   if (await exists(join(gitRoot, ".git"))) {
     await run("git", ["fetch", "--all", "--prune"], gitRoot);
-    gitPull = await run("git", ["pull", "--ff-only"], gitRoot);
+    // Tracked local edits (e.g. hand-edited wrangler.jsonc) block ff-only pull.
+    // Stash them, pull remote, then drop the stash — host secrets stay in agent/.env (gitignored).
+    const dirty = (await run("git", ["status", "--porcelain"], gitRoot)).trim();
+    if (dirty && dirty !== "ok") {
+      gitStash = await run(
+        "git",
+        ["stash", "push", "-m", `janitor-agent-update-${Date.now()}`],
+        gitRoot,
+      );
+      console.log(JSON.stringify({ event: "self_update.git.stash", phase: "stashed", dirty: dirty.slice(0, 500) }));
+    }
+    try {
+      gitPull = await run("git", ["pull", "--ff-only"], gitRoot);
+    } catch (error) {
+      if (gitStash) {
+        await run("git", ["stash", "pop"], gitRoot).catch(() => undefined);
+      }
+      throw error;
+    }
+    if (gitStash && !/No local changes to save/i.test(gitStash)) {
+      // Prefer remote tracked files; domain/secrets belong in env, not wrangler.jsonc.
+      await run("git", ["stash", "drop"], gitRoot).catch(() => undefined);
+      gitStash = `${gitStash}\n(dropped after pull — local tracked edits discarded)`;
+    }
   }
 
   // Worker deploy from monorepo root (package.json "deploy": "wrangler deploy").
@@ -186,13 +211,15 @@ export async function runSelfUpdate(cfg: AgentConfig): Promise<SelfUpdateResult>
   const notes = [
     restartScheduled ? `pm2 restart ${pm2AppName} scheduled` : "Updated files; set PM2_APP_NAME to auto-restart under pm2",
     cfg.deployOnUpdate ? "Worker npm run deploy finished" : "Worker deploy skipped (AGENT_DEPLOY_ON_UPDATE=false)",
-  ];
+    gitStash ? "stashed+dropped local tracked edits before pull" : "",
+  ].filter(Boolean);
 
   return {
     ok: true,
     repoDir: gitRoot,
     packageDir,
     gitPull,
+    gitStash,
     rootNpmInstall,
     deploy,
     npmInstall,
