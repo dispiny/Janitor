@@ -17,13 +17,16 @@
       "enabled": true
     }
   },
-  // Public project URL only — never commit SUPABASE_ANON_KEY here.
+  // Keep dashboard Variables on deploy (secrets are never wiped either).
+  // Without this, a deploy can delete SUPABASE_* you set only in the CF UI.
+  "keep_vars": true,
+  // Public project URL only — never commit SUPABASE_ANON_KEY / SERVICE_ROLE here.
   "vars": {
     "SUPABASE_URL": "https://ypklxfwpbyroxdolgiun.supabase.co"
   }
-  // Optional custom domain: Dashboard → Workers → ops → Domains & Routes
-  // (do not commit personal hostnames here)
-  // Secrets (not committed):
+  // Custom domain (e.g. ops.example.com): manage in Dashboard, or set on the
+  // deploy host via CLOUDFLARE_CUSTOM_DOMAIN + CLOUDFLARE_ZONE_NAME (not in git).
+  // Secrets (not committed — use Secret, not plain Variable):
   //   wrangler secret put SUPABASE_ANON_KEY
   //   wrangler secret put SUPABASE_SERVICE_ROLE_KEY  # agent poll/report
   //   wrangler secret put SLACK_WEBHOOK_URL   # optional

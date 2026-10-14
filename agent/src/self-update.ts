@@ -116,8 +116,45 @@ export async function runSelfUpdate(cfg: AgentConfig): Promise<SelfUpdateResult>
       );
     }
     rootNpmInstall = await npmInstallIn(gitRoot);
-    console.log(JSON.stringify({ event: "self_update.deploy.start", cwd: gitRoot }));
-    deploy = await run("npm", ["run", "deploy"], gitRoot, 300_000);
+    console.log(
+      JSON.stringify({
+        event: "self_update.deploy.start",
+        cwd: gitRoot,
+        customDomain: process.env.CLOUDFLARE_CUSTOM_DOMAIN || null,
+        keepVars: true,
+      }),
+    );
+    // CI=1 → wrangler skips the interactive "config differs" prompt (defaults to continue).
+    // scripts/deploy.mjs uses --keep-vars and optional CLOUDFLARE_CUSTOM_DOMAIN routes.
+    deploy = await new Promise((resolve, reject) => {
+      const child = spawn("npm", ["run", "deploy"], {
+        cwd: gitRoot,
+        env: { ...process.env, CI: "1" },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let out = "";
+      let err = "";
+      const timer = setTimeout(() => {
+        child.kill("SIGTERM");
+        reject(new Error("npm run deploy timed out after 300000ms"));
+      }, 300_000);
+      child.stdout.on("data", (c) => {
+        out += String(c);
+      });
+      child.stderr.on("data", (c) => {
+        err += String(c);
+      });
+      child.on("error", (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        const text = (out + err).trim().slice(0, 4000);
+        if (code === 0) resolve(text || "ok");
+        else reject(new Error(`npm run deploy failed (${code}): ${text || "no output"}`));
+      });
+    });
     console.log(JSON.stringify({ event: "self_update.deploy.complete", cwd: gitRoot }));
   }
 
