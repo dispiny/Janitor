@@ -335,60 +335,83 @@ function renderList(target, items, factory, emptyText) {
 function renderPve() {
   const host = $("dash-pve");
   host.replaceChildren();
-  const nodes = state.servers.filter((s) => s.pve);
-  if (!nodes.length) {
+  const linked = state.servers.filter((s) => s.pve);
+  if (!linked.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.textContent = "연동된 Proxmox 노드가 없습니다. 서버 추가에서 노드로 연결할 수 있습니다.";
+    empty.textContent = "연동된 Proxmox가 없습니다. 서버 추가에서 API 주소와 토큰만 넣으면 노드·게스트를 긁어옵니다.";
     host.appendChild(empty);
     return;
   }
-  nodes.forEach((server) => {
+  linked.forEach((server) => {
     const card = document.createElement("article");
     card.className = "pve-card";
     const guests = server.pve.guests || [];
     const running = guests.filter((g) => g.is_on).length;
+    const nodeNames = [...new Set(guests.map((g) => g.node).filter(Boolean))];
     const title = document.createElement("div");
     title.className = "section-head";
     title.innerHTML = "<h2></h2>";
-    title.querySelector("h2").textContent = server.pve.node;
+    title.querySelector("h2").textContent = server.name;
     const go = document.createElement("button");
     go.className = "text-btn";
     go.type = "button";
-    go.textContent = "노드 콘솔로 이동";
+    go.textContent = "콘솔로 이동";
     go.addEventListener("click", () => openManage(server.manageUrl || server.pve.host));
     title.appendChild(go);
     card.appendChild(title);
     const meta = document.createElement("p");
     meta.className = "sub";
-    meta.textContent = guests.length
-      ? `게스트 ${running}개 실행 · ${guests.length - running}개 중지 · 토큰 ${server.pve.tokenId || "—"}`
-      : "에이전트가 게스트 목록을 아직 동기화하지 않았습니다.";
+    if (!guests.length) {
+      meta.textContent = "에이전트가 아직 동기화하지 않았습니다. 잠시 기다리거나 상태 다시 읽기를 눌러 주세요.";
+    } else {
+      const nodeLabel = server.pve.node
+        ? `노드 ${server.pve.node}`
+        : nodeNames.length
+          ? `노드 ${nodeNames.length}개 (${nodeNames.join(", ")})`
+          : "노드 목록";
+      meta.textContent = `${nodeLabel} · 게스트 ${running}개 실행 · ${guests.length - running}개 중지`;
+    }
     card.appendChild(meta);
     if (guests.length) {
-      const grid = document.createElement("div");
-      grid.className = "guests";
+      const byNode = new Map();
       guests.forEach((guest) => {
-        const cell = document.createElement("div");
-        cell.className = "guest";
-        const linked = state.services.find((service) => service.host === guest.name);
-        cell.innerHTML = `<div class="guest-top"><b></b><span class="badge"></span></div><span class="meta kind"></span><span class="meta health"></span>`;
-        cell.querySelector("b").textContent = guest.name;
-        const badge = cell.querySelector(".badge");
-        badge.textContent = guest.is_on ? "실행" : "중지";
-        badge.classList.add(guest.is_on ? "on" : "off");
-        cell.querySelector(".kind").textContent = guest.kind;
-        const health = cell.querySelector(".health");
-        if (!linked) health.textContent = "헬스 체크 없음";
-        else if (linked.ok == null) health.textContent = "헬스 미확인";
-        else if (linked.ok) health.textContent = `헬스 ${linked.code} · ${linked.ms} ms`;
-        else {
-          health.textContent = "헬스 실패";
-          cell.classList.add("down");
-        }
-        grid.appendChild(cell);
+        const key = guest.node || server.pve.node || "node";
+        if (!byNode.has(key)) byNode.set(key, []);
+        byNode.get(key).push(guest);
       });
-      card.appendChild(grid);
+      byNode.forEach((list, nodeName) => {
+        if (byNode.size > 1 || !server.pve.node) {
+          const label = document.createElement("div");
+          label.className = "label";
+          label.style.marginTop = "12px";
+          label.textContent = nodeName;
+          card.appendChild(label);
+        }
+        const grid = document.createElement("div");
+        grid.className = "guests";
+        list.forEach((guest) => {
+          const cell = document.createElement("div");
+          cell.className = "guest";
+          const svc = state.services.find((service) => service.host === guest.name);
+          cell.innerHTML = `<div class="guest-top"><b></b><span class="badge"></span></div><span class="meta kind"></span><span class="meta health"></span>`;
+          cell.querySelector("b").textContent = guest.name;
+          const badge = cell.querySelector(".badge");
+          badge.textContent = guest.is_on ? "실행" : "중지";
+          badge.classList.add(guest.is_on ? "on" : "off");
+          cell.querySelector(".kind").textContent = guest.kind;
+          const health = cell.querySelector(".health");
+          if (!svc) health.textContent = "헬스 체크 없음";
+          else if (svc.ok == null) health.textContent = "헬스 미확인";
+          else if (svc.ok) health.textContent = `헬스 ${svc.code} · ${svc.ms} ms`;
+          else {
+            health.textContent = "헬스 실패";
+            cell.classList.add("down");
+          }
+          grid.appendChild(cell);
+        });
+        card.appendChild(grid);
+      });
     }
     host.appendChild(card);
   });
@@ -733,6 +756,10 @@ function openServerModal() {
   $("srv-port").value = "9";
   $("srv-error").textContent = "";
   $("pve-fields").hidden = true;
+  $("srv-pve").checked = false;
+  $("srv-pve-host").required = false;
+  $("srv-pve-token").required = false;
+  $("srv-pve-secret").required = false;
   setWol("manual");
   $("server-modal").hidden = false;
   $("srv-name").focus();
@@ -909,14 +936,18 @@ async function init() {
     button.addEventListener("click", () => setWol(button.dataset.wol));
   });
   $("srv-pve").addEventListener("change", () => {
-    $("pve-fields").hidden = !$("srv-pve").checked;
+    const on = $("srv-pve").checked;
+    $("pve-fields").hidden = !on;
+    $("srv-pve-host").required = on;
+    $("srv-pve-token").required = on;
+    $("srv-pve-secret").required = on;
   });
 
   $("server-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     $("srv-error").textContent = "";
     try {
-      await api("/api/servers", {
+      const data = await api("/api/servers", {
         method: "POST",
         body: JSON.stringify({
           houseId: state.house.id,
@@ -936,7 +967,11 @@ async function init() {
       });
       $("server-modal").hidden = true;
       $("srv-pve-secret").value = "";
-      showToast("서버를 추가했습니다.");
+      showToast(
+        data.syncQueued
+          ? "서버를 추가했습니다. Proxmox 노드·게스트를 곧 긁어옵니다."
+          : "서버를 추가했습니다.",
+      );
       await refresh();
     } catch (err) {
       $("srv-error").textContent = err.message;

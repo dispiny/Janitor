@@ -286,13 +286,13 @@
         <label class="field"><span>포트</span><input id="srv-port" type="number" value="9" min="1" max="65535"></label>
         <p class="hint">에이전트가 집 LAN에서 매직 패킷을 3번 보냅니다. 유선 NIC MAC을 쓰세요. 서브넷이 다르면 브로드캐스트를 예: 192.168.219.255 로 지정하세요.</p>
       </div>
-      <label class="check"><input id="srv-pve" type="checkbox"> Proxmox 노드로 연동</label>
+      <label class="check"><input id="srv-pve" type="checkbox"> Proxmox API로 연동</label>
       <div id="pve-fields" hidden>
         <label class="field"><span>API 주소</span><input id="srv-pve-host" type="url" placeholder="https://pve.home:8006"></label>
-        <label class="field"><span>노드 이름</span><input id="srv-pve-node" placeholder="pve-node"></label>
         <label class="field"><span>토큰 ID</span><input id="srv-pve-token" placeholder="janitor@pve!monitor"></label>
         <label class="field"><span>토큰 비밀</span><input id="srv-pve-secret" type="password" placeholder="저장 후 다시 표시하지 않음" autocomplete="new-password"></label>
-        <p class="hint">비밀은 서버측 server_secrets에만 저장되며 화면으로 다시 내려오지 않습니다.</p>
+        <label class="field"><span>노드 이름 (선택)</span><input id="srv-pve-node" placeholder="비우면 클러스터 전체 노드"></label>
+        <p class="hint">API 주소와 토큰만 있으면 에이전트가 노드 목록을 받은 뒤 VM/LXC를 전부 긁습니다. 노드를 적으면 그 노드만 봅니다. 비밀은 server_secrets에만 저장됩니다.</p>
       </div>
       <p class="error" id="srv-error"></p>
       <div class="modal-actions">
