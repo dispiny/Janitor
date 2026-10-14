@@ -125,10 +125,10 @@ begin
       and g.server_id = sync_id
       and not exists (
         select 1
-        from jsonb_array_elements(coalesce(p_payload->'guests', '[]'::jsonb)) item
-        where (item->>'server_id')::uuid = sync_id
-          and coalesce(item->>'node', '') = g.node
-          and item->>'name' = g.name
+        from jsonb_array_elements(coalesce(p_payload->'guests', '[]'::jsonb)) guest_row
+        where (guest_row->>'server_id')::uuid = sync_id
+          and coalesce(guest_row->>'node', '') = g.node
+          and guest_row->>'name' = g.name
       );
   end loop;
 
@@ -172,8 +172,8 @@ begin
     delete from public.servers c
     where c.pve_parent_id = link.id
       and not exists (
-        select 1 from jsonb_array_elements(item->'nodes') n
-        where n->>'node' = c.pve_node
+        select 1 from jsonb_array_elements(item->'nodes') node_row
+        where node_row->>'node' = c.pve_node
       );
   end loop;
 
