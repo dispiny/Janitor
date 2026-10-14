@@ -98,14 +98,15 @@ curl -sS -H "Authorization: Bearer $AGENT_TOKEN" http://127.0.0.1:3920/v1/status
 | 기능 | 상태 |
 | --- | --- |
 | MAC Wake-on-LAN | 동작 (UDP magic packet 브로드캐스트, 기본 3회) |
-| 공인 IP 조회 | 동작 (`ipify` → `ifconfig.me` 폴백) |
-| HTTP 헬스 체크 | 동작 |
+| 자동 스케줄 | tick마다 주기·마지막 시각을 보고 due인 것만 실행 (집 설정, **0=끔**). 수동 버튼도 그대로 동작 |
+| 공인 IP | `ipify` → `ifconfig.me`. 기본 **2시간** (잘 안 바뀜) |
+| HTTP 헬스 | 기본 **5분** `health_all` |
+| Proxmox 동기화 | 기본 **15분** `pve_sync` |
+| 속도 측정 | Fast.com 스타일. 기본 **1시간** (측정 비용↑) |
 | 요청 로그 | 모든 HTTP·job을 `received` → `processing` → `complete`/`failed` 3단계로 stdout JSON (토큰 비출력) |
 | Job poller (`JANITOR_API_URL`) | 동작 (`tick` 동시 실행 가드, 인증 poll/report) |
 | 런타임 상태 보고 | 버전·hostname·pm2·uptime을 매 tick 보고, UI 자동 표시 |
 | 원격 업데이트 | `agent_update` job → git pull + npm + `pm2 restart` (opt-in) |
-| 속도 측정 | `speed_probe` — Fast.com 스타일 병렬 다운로드(Mbps) + Cloudflare 업로드 |
-| Proxmox 동기화 | `pve_sync` job (시크릿은 `server_secrets`, 클라이언트 RLS deny) |
 
 pm2 예시 (agent/ 에서):
 

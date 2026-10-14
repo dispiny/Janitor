@@ -29,6 +29,17 @@ test("agent requires real env and does not ship dummy inventory", () => {
   assert.doesNotMatch(index + config + poller, /sampleServers|203\.0\.113\.42|\/wol\.cgi/);
 });
 
+test("house check interval migration exposes schedule fields on agent_poll", () => {
+  const sql = readFileSync(
+    new URL("../supabase/migrations/20261014180000_house_check_intervals.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(sql, /public_ip_interval_sec/);
+  assert.match(sql, /health_interval_sec/);
+  assert.match(sql, /last_speed_at/);
+  assert.match(sql, /create or replace function public\.agent_poll/);
+});
+
 test("migrations ship full RLS RPC and invites SQL", () => {
   const rpc = readFileSync(
     new URL("../supabase/migrations/20261011181000_agent_rpcs_and_invites.sql", import.meta.url),
