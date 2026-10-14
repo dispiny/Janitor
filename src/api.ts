@@ -2,6 +2,7 @@ import type { Env } from "./env";
 import { dedupeAlerts } from "./alert-dedupe";
 import { buildOpsAlert, notifySlack } from "./slack";
 import { anonClient, serviceClient, sha256Hex, userClient } from "./supabase";
+import { isUuid, parseServiceInput, type ServiceInput } from "./services";
 import { assertHttpUrl } from "./urls";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -35,6 +36,8 @@ async function requireHouseOwner(
   if (!data) return json({ error: "owner만 할 수 있습니다." }, 403);
   return null;
 }
+
+const JOB_KINDS = new Set(["wake", "health_all", "health_one", "pve_sync", "speed_probe", "agent_update"]);
 
 /** Prefer service role (SEC-10); fall back to anon until revoke migration is applied. */
 function agentDb(env: Env): SupabaseClient {
@@ -167,54 +170,116 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
       const auth = await requireUser(env, req);
       if ("error" in auth && auth.error) return auth.error;
       const id = path.split("/")[3];
-      const { error } = await auth.sb!.from("servers").delete().eq("id", id);
+      if (!isUuid(id)) return json({ error: "잘못된 서버 ID" }, 400);
+      const { data, error } = await auth.sb!.from("servers").delete().eq("id", id).select("id");
       if (error) return json({ error: error.message }, 400);
+      if (!data?.length) return json({ error: "서버를 찾을 수 없습니다." }, 404);
       return json({ ok: true });
     }
 
     if (path === "/api/services" && req.method === "POST") {
       const auth = await requireUser(env, req);
       if ("error" in auth && auth.error) return auth.error;
-      const body = (await req.json()) as {
-        houseId: string;
-        name: string;
-        hostLabel?: string;
-        healthUrl: string;
-        expectStatus?: number;
-        manageUrl?: string;
-        slackOnFail?: boolean;
-      };
-      if (!body.houseId || !body.name?.trim()) {
-        return json({ error: "이름과 집이 필요합니다." }, 400);
+      const body = (await req.json()) as ServiceInput & { houseId?: string; checkNow?: boolean };
+      if (!isUuid(body.houseId)) return json({ error: "집이 필요합니다." }, 400);
+      const parsed = parseServiceInput(body);
+      if (!parsed.ok) return json({ error: parsed.error }, 400);
+
+      const { data: dupe } = await auth.sb!
+        .from("services")
+        .select("id, name")
+        .eq("house_id", body.houseId)
+        .eq("health_url", parsed.row.health_url!)
+        .limit(1)
+        .maybeSingle();
+      if (dupe) {
+        return json({ error: `같은 헬스 체크 주소가 이미 '${dupe.name}'(으)로 등록되어 있습니다.` }, 409);
       }
-      const health = assertHttpUrl(body.healthUrl || "", { field: "헬스 체크 주소" });
-      if (!health.ok) return json({ error: health.error }, 400);
-      const manage = assertHttpUrl(body.manageUrl || "", { allowEmpty: true, field: "관리 페이지 주소" });
-      if (!manage.ok) return json({ error: manage.error }, 400);
 
       const { data: service, error } = await auth.sb!
         .from("services")
-        .insert({
-          house_id: body.houseId,
-          name: body.name.trim(),
-          host_label: (body.hostLabel || "").trim(),
-          health_url: health.url,
-          expect_status: body.expectStatus || 200,
-          manage_url: manage.url,
-          slack_on_fail: body.slackOnFail !== false,
-        })
+        .insert({ house_id: body.houseId, ...parsed.row })
         .select("*")
         .single();
       if (error) return json({ error: error.message }, 400);
-      return json({ service });
+
+      let checkQueued = false;
+      if (body.checkNow !== false) {
+        const { error: jobError } = await auth.sb!.from("agent_jobs").insert({
+          house_id: body.houseId,
+          kind: "health_one",
+          payload: { serviceId: service.id },
+        });
+        checkQueued = !jobError;
+      }
+      return json({ service, checkQueued }, 201);
+    }
+
+    if (path.startsWith("/api/services/") && req.method === "PATCH") {
+      const auth = await requireUser(env, req);
+      if ("error" in auth && auth.error) return auth.error;
+      const id = path.split("/")[3];
+      if (!isUuid(id)) return json({ error: "잘못된 서비스 ID" }, 400);
+      const body = (await req.json()) as ServiceInput;
+      const parsed = parseServiceInput(body, { partial: true });
+      if (!parsed.ok) return json({ error: parsed.error }, 400);
+
+      const { data: current } = await auth.sb!
+        .from("services")
+        .select("id, house_id, health_url, expect_status")
+        .eq("id", id)
+        .maybeSingle();
+      if (!current) return json({ error: "서비스를 찾을 수 없습니다." }, 404);
+
+      if (parsed.row.health_url && parsed.row.health_url !== current.health_url) {
+        const { data: dupe } = await auth.sb!
+          .from("services")
+          .select("id, name")
+          .eq("house_id", current.house_id)
+          .eq("health_url", parsed.row.health_url)
+          .neq("id", id)
+          .limit(1)
+          .maybeSingle();
+        if (dupe) {
+          return json({ error: `같은 헬스 체크 주소가 이미 '${dupe.name}'(으)로 등록되어 있습니다.` }, 409);
+        }
+      }
+
+      const targetChanged =
+        (parsed.row.health_url !== undefined && parsed.row.health_url !== current.health_url) ||
+        (parsed.row.expect_status !== undefined && parsed.row.expect_status !== current.expect_status);
+      // Old results describe the previous target; reset so the UI shows "미확인" until re-checked.
+      const reset = targetChanged ? { last_ok: null, last_code: null, last_ms: null, last_checked_at: null } : {};
+
+      const { data: service, error } = await auth.sb!
+        .from("services")
+        .update({ ...parsed.row, ...reset, updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .select("*")
+        .maybeSingle();
+      if (error) return json({ error: error.message }, 400);
+      if (!service) return json({ error: "서비스를 찾을 수 없습니다." }, 404);
+
+      let checkQueued = false;
+      if (targetChanged) {
+        const { error: jobError } = await auth.sb!.from("agent_jobs").insert({
+          house_id: current.house_id,
+          kind: "health_one",
+          payload: { serviceId: id },
+        });
+        checkQueued = !jobError;
+      }
+      return json({ service, checkQueued });
     }
 
     if (path.startsWith("/api/services/") && req.method === "DELETE") {
       const auth = await requireUser(env, req);
       if ("error" in auth && auth.error) return auth.error;
       const id = path.split("/")[3];
-      const { error } = await auth.sb!.from("services").delete().eq("id", id);
+      if (!isUuid(id)) return json({ error: "잘못된 서비스 ID" }, 400);
+      const { data, error } = await auth.sb!.from("services").delete().eq("id", id).select("id");
       if (error) return json({ error: error.message }, 400);
+      if (!data?.length) return json({ error: "서비스를 찾을 수 없습니다." }, 404);
       return json({ ok: true });
     }
 
@@ -226,7 +291,7 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
         kind: "wake" | "health_all" | "health_one" | "pve_sync" | "speed_probe" | "agent_update";
         payload?: Record<string, unknown>;
       };
-      if (!body.houseId || !body.kind) return json({ error: "잘못된 요청" }, 400);
+      if (!isUuid(body.houseId) || !JOB_KINDS.has(body.kind)) return json({ error: "잘못된 요청" }, 400);
       const { data: job, error } = await auth.sb!
         .from("agent_jobs")
         .insert({
