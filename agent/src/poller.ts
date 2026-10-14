@@ -4,6 +4,7 @@ import { resolvePublicIp } from "./public-ip.js";
 import { log } from "./log.js";
 import { collectRuntimeStatus } from "./runtime-status.js";
 import { runSelfUpdate } from "./self-update.js";
+import { runSpeedTest } from "./speedtest.js";
 import { sendMagicPacket } from "./wol/magic-packet.js";
 import { wakeViaUplus } from "./wol/uplus.js";
 
@@ -11,8 +12,6 @@ export type PollerConfig = AgentConfig & {
   janitorApiUrl: string;
   pollMs: number;
   hostLabel?: string;
-  /** Max download bytes for optional speed_probe jobs (default 2_000_000). */
-  speedProbeBytes: number;
 };
 
 type PollSnapshot = {
@@ -228,36 +227,30 @@ async function handleJobs(cfg: PollerConfig, snapshot: PollSnapshot) {
         }
         jobResults.push({ id: job.id, status: "done", result: { guests: guests.length } });
       } else if (job.kind === "speed_probe") {
-        const bytes = cfg.speedProbeBytes;
-        const url =
-          process.env.SPEEDTEST_URL ||
-          `https://speed.cloudflare.com/__down?bytes=${bytes}`;
-        const urlForLog = safeUrlForLog(url);
-        log("poller.speed.received", { ...jobBase, phase: "received", url: urlForLog, bytes });
-        log("poller.speed.processing", { ...jobBase, phase: "processing", url: urlForLog, bytes });
-        const started = Date.now();
-        const res = await fetch(url, { signal: AbortSignal.timeout(60000) });
-        if (!res.ok || !res.body) throw new Error("speed probe failed");
-        let read = 0;
-        for await (const chunk of res.body) {
-          read += chunk.byteLength;
-          if (read >= bytes) break;
-        }
-        const ms = Date.now() - started;
-        const seconds = Math.max(0.001, ms / 1000);
+        log("poller.speed.received", {
+          ...jobBase,
+          phase: "received",
+          provider: cfg.speedTestProvider,
+          durationMs: cfg.speedTestDurationMs,
+          connections: cfg.speedTestConnections,
+        });
+        log("poller.speed.processing", { ...jobBase, phase: "processing" });
+        const result = await runSpeedTest({
+          provider: cfg.speedTestProvider,
+          durationMs: cfg.speedTestDurationMs,
+          connections: cfg.speedTestConnections,
+          measureUpload: true,
+        });
         speed = {
-          down_mbps: Math.round(((read * 8) / seconds / 1_000_000) * 10) / 10,
-          up_mbps: 0,
+          down_mbps: result.down_mbps,
+          up_mbps: result.up_mbps,
         };
         log("poller.speed.complete", {
           ...jobBase,
           phase: "complete",
-          bytesRead: read,
-          ms,
-          down_mbps: speed.down_mbps,
-          up_mbps: speed.up_mbps,
+          ...result,
         });
-        jobResults.push({ id: job.id, status: "done", result: speed });
+        jobResults.push({ id: job.id, status: "done", result });
       } else if (job.kind === "agent_update") {
         const result = await runSelfUpdate(cfg);
         jobResults.push({ id: job.id, status: "done", result });

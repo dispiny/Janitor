@@ -9,6 +9,9 @@ test("collectRuntimeStatus reports version and host", () => {
     host: "127.0.0.1",
     pollMs: 15000,
     speedProbeBytes: 2000,
+    speedTestDurationMs: 12_000,
+    speedTestConnections: 4,
+    speedTestProvider: "auto",
     allowRemoteUpdate: true,
     pm2AppName: "ops-agent",
   });

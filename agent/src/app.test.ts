@@ -10,6 +10,9 @@ const config: AgentConfig = {
   tunnelHostname: "agent.example.trycloudflare.com",
   pollMs: 15000,
   speedProbeBytes: 2_000_000,
+  speedTestDurationMs: 12_000,
+  speedTestConnections: 4,
+  speedTestProvider: "auto",
   allowRemoteUpdate: false,
 };
 

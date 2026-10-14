@@ -43,7 +43,10 @@ agent/
 | `AGENT_TOKEN` | yes | Worker/대시보드가 보내는 Bearer 토큰 |
 | `JANITOR_API_URL` | poll용 | Worker base URL. 있으면 job 큐를 폴링 |
 | `AGENT_POLL_MS` | no | 폴링 간격(ms), 기본 `15000`, 최소 `3000` |
-| `SPEED_PROBE_BYTES` | no | speed_probe 샘플 상한(기본 2MiB, 최대 5MiB) |
+| `SPEEDTEST_PROVIDER` | no | `auto`(기본) · `fast` · `cloudflare` — Fast.com CDN 우선, 실패 시 Cloudflare |
+| `SPEEDTEST_DURATION_MS` | no | 다운로드 측정 시간(ms), 기본 `12000` (3–60초) |
+| `SPEEDTEST_CONNECTIONS` | no | 병렬 연결 수, 기본 `4` (1–8) |
+| `SPEED_PROBE_BYTES` | no | 레거시 단일 샘플 상한(호환용) |
 | `PORT` | no | 기본 `3920` |
 | `HOST` | no | 기본 `0.0.0.0` |
 | `CF_TUNNEL_HOSTNAME` | no | 상태 응답에 광고할 Tunnel 호스트명 |
@@ -105,7 +108,7 @@ curl -sS -H "Authorization: Bearer $AGENT_TOKEN" http://127.0.0.1:3920/v1/status
 | Job poller (`JANITOR_API_URL`) | 동작 (`tick` 동시 실행 가드, 인증 poll/report) |
 | 런타임 상태 보고 | 버전·hostname·pm2·uptime을 매 tick 보고, UI 자동 표시 |
 | 원격 업데이트 | `agent_update` job → git pull + npm + `pm2 restart` (opt-in) |
-| 속도 측정 | `speed_probe` job (샘플 상한 `SPEED_PROBE_BYTES`) |
+| 속도 측정 | `speed_probe` — Fast.com 스타일 병렬 다운로드(Mbps) + Cloudflare 업로드 |
 | Proxmox 동기화 | `pve_sync` job (시크릿은 `server_secrets`, 클라이언트 RLS deny) |
 
 pm2 예시 (agent/ 에서):
