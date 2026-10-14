@@ -102,7 +102,10 @@
         <div class="list" id="dash-servers"></div>
         <div class="section-head">
           <h2>서비스</h2>
-          <button class="ghost" type="button" id="goto-services">전체 보기</button>
+          <div class="row-actions">
+            <button class="ghost" type="button" id="goto-services">전체 보기</button>
+            <button class="primary" type="button" id="add-svc-dash">서비스 추가</button>
+          </div>
         </div>
         <div class="banner" id="health-alert" hidden></div>
         <div class="svc-grid" id="dash-services"></div>
@@ -137,7 +140,11 @@
           <button class="primary" id="add-svc-list" type="button">서비스 추가</button>
         </div>
         <div class="banner" id="health-alert-page" hidden></div>
-        <div class="row-actions" style="margin-bottom:8px">
+        <div class="filters svc-toolbar" role="group" aria-label="서비스 필터">
+          <button class="tab" type="button" data-svc-filter="all" aria-selected="true">전체 <span class="count" id="svc-count-all">0</span></button>
+          <button class="tab" type="button" data-svc-filter="down">실패 <span class="count" id="svc-count-down">0</span></button>
+          <button class="tab" type="button" data-svc-filter="unknown">미확인 <span class="count" id="svc-count-unknown">0</span></button>
+          <input class="svc-search" id="svc-search" type="search" placeholder="이름·호스트·주소 검색" aria-label="서비스 검색">
           <button class="ghost" id="check-all" type="button">전체 확인</button>
         </div>
         <div class="svc-grid" id="service-list"></div>
@@ -296,17 +303,19 @@
     <form class="modal" id="svc-form" role="dialog" aria-labelledby="svc-title">
       <h2 id="svc-title">서비스 추가</h2>
       <p class="lede">헬스 체크는 주소와 기대 상태 코드만 저장합니다. 인증 비밀은 환경 변수로 둡니다.</p>
-      <label class="field" style="margin-top:14px"><span>이름</span><input id="svc-name" required placeholder="Home Assistant"></label>
-      <label class="field"><span>돌아가는 곳</span><input id="svc-host" placeholder="haos, nas, dns…"></label>
+      <label class="field" style="margin-top:14px"><span>이름</span><input id="svc-name" required maxlength="80" placeholder="Home Assistant"></label>
+      <label class="field"><span>돌아가는 곳</span><input id="svc-host" list="svc-host-options" maxlength="80" placeholder="haos, nas, dns…"></label>
+      <datalist id="svc-host-options"></datalist>
       <label class="field"><span>헬스 체크 URL</span><input id="svc-url" type="url" required placeholder="https://ha.home/api/"></label>
       <label class="field"><span>기대 HTTP 상태</span><input id="svc-expect" type="number" min="100" max="599" value="200"></label>
       <label class="field"><span>관리 페이지 URL</span><input id="svc-manage" type="url" placeholder="https://ha.home"></label>
       <label class="check"><input id="svc-slack" type="checkbox" checked> 실패하면 Slack으로 알림</label>
-      <p class="hint">호출에 필요한 토큰이 있으면 에이전트의 <span class="env">HEALTHCHECK_TOKEN</span>만 읽습니다.</p>
+      <label class="check" id="svc-check-now-row"><input id="svc-check-now" type="checkbox" checked> 추가하면 바로 한 번 확인</label>
+      <p class="hint">호출에 필요한 토큰이 있으면 에이전트의 <span class="env">HEALTHCHECK_TOKEN</span>만 읽습니다. 돌아가는 곳을 Proxmox 게스트 이름과 같게 적으면 현황의 게스트 칸에 헬스가 붙습니다.</p>
       <p class="error" id="svc-error"></p>
       <div class="modal-actions">
         <button class="ghost" id="close-svc" type="button">취소</button>
-        <button class="primary" type="submit">추가</button>
+        <button class="primary" id="svc-submit" type="submit">추가</button>
       </div>
     </form>
   </div>
