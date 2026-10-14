@@ -104,7 +104,9 @@ npm run dev
 - `POST /api/bootstrap` — 집 생성 (로그인 직후, 집이 없을 때)
 - `POST /api/invite` — 집 초대 + Auth 허용 목록 (`invite_house_member`)
 - `POST /api/servers` / `DELETE /api/servers/:id`
-- `POST /api/services` / `DELETE /api/services/:id`
+- `POST /api/services` — 헬스 체크 추가 (같은 주소 중복 시 409, 기본으로 첫 `health_one` 작업 자동 등록 · `checkNow:false`로 끄기)
+- `PATCH /api/services/:id` — 일부 필드 수정 (주소/기대 상태가 바뀌면 결과 초기화 후 재확인)
+- `DELETE /api/services/:id`
 - `POST /api/jobs` — 인증된 작업 큐 enqueue (`wake`, `health_*`, `pve_sync`, `speed_probe`, `agent_update`)
 - `POST /api/agent/token` — 에이전트 토큰 발급 (해시만 DB 저장)
 - `GET /api/agent/poll` / `POST /api/agent/report` — 에이전트 Bearer 전용
