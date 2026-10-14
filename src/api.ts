@@ -142,7 +142,8 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
         pveTokenSecret?: string;
       };
 
-      if (!body.houseId || !body.name?.trim()) return json({ error: "이름과 집이 필요합니다." }, 400);
+      if (!body.houseId) return json({ error: "집이 필요합니다." }, 400);
+      if (!body.name?.trim() && !body.pveEnabled) return json({ error: "이름이 필요합니다." }, 400);
       const wolMode = body.wolMode === "manual" ? "manual" : "off";
       if (body.wolMode && body.wolMode !== "manual" && body.wolMode !== "off") {
         return json({ error: "Wake-on-LAN은 MAC 등록 방식만 지원합니다." }, 400);
@@ -173,7 +174,7 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
         .from("servers")
         .insert({
           house_id: body.houseId,
-          name: body.name.trim(),
+          name: body.name?.trim() || (pveHost ? new URL(pveHost).hostname : ""),
           role: (body.role || "").trim(),
           // Default manage page to the PVE UI when the field was left empty.
           manage_url: manage.url || pveHost || "",
