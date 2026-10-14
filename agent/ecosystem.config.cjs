@@ -1,6 +1,8 @@
 /** From agent/: `pm2 start ecosystem.config.cjs` */
 const path = require("node:path");
 
+const loader = path.join(__dirname, "node_modules/tsx/dist/loader.mjs");
+
 module.exports = {
   apps: [
     {
@@ -8,11 +10,11 @@ module.exports = {
       cwd: __dirname,
       script: "src/index.ts",
       interpreter: "node",
-      // Resolve local node_modules/tsx (do not rely on a global `tsx` binary)
-      interpreter_args: `--import ${path.join(__dirname, "node_modules/tsx/dist/loader.mjs")}`,
+      // Absolute local loader — survives PATH issues after npm/pm2 restart
+      interpreter_args: `--import ${loader}`,
       instances: 1,
       autorestart: true,
-      max_restarts: 10,
+      max_restarts: 20,
       min_uptime: "5s",
       env: {
         NODE_ENV: "production",
