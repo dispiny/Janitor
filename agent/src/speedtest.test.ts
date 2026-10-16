@@ -61,7 +61,7 @@ describe("runSpeedTest", () => {
     assert.ok(result.down_mbps > 0);
     assert.ok(result.bytes_down > 0);
     assert.equal(result.connections, 2);
-    assert.ok(result.up_mbps >= 0);
+    assert.ok(result.up_mbps !== null && result.up_mbps >= 0);
   });
 
   it("falls back to Cloudflare when Fast.com token discovery fails", async () => {
@@ -90,6 +90,78 @@ describe("runSpeedTest", () => {
 
     assert.equal(result.provider, "cloudflare");
     assert.ok(result.down_mbps > 0);
-    assert.equal(result.up_mbps, 0);
+    // Upload not measured → null, never a fake 0 Mbps.
+    assert.equal(result.up_mbps, null);
+  });
+
+  it("falls back to Cloudflare when Fast.com targets were fetched but every download failed", async () => {
+    _resetFastTokenCache();
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url === "https://fast.com/") {
+        return new Response('<script src="/app-abc123.js"></script>', { status: 200 });
+      }
+      if (url.includes("app-abc123.js")) {
+        return new Response('var x={token:"test-token-xyz"};', { status: 200 });
+      }
+      if (url.includes("api.fast.com/netflix/speedtest/v2")) {
+        return Response.json({ targets: [{ url: "https://cdn.example/dead" }] });
+      }
+      if (url.startsWith("https://cdn.example/")) {
+        throw new Error("ECONNRESET");
+      }
+      if (url.includes("speed.cloudflare.com/__down")) {
+        return new Response(bytesStream(1_500_000), { status: 200 });
+      }
+      return new Response("missing", { status: 404 });
+    };
+
+    const result = await runSpeedTest({
+      fetchImpl,
+      provider: "auto",
+      durationMs: 3000,
+      connections: 2,
+      measureUpload: false,
+    });
+    assert.equal(result.provider, "cloudflare");
+    assert.ok(result.down_mbps > 0);
+  });
+
+  it("throws instead of reporting 0 Mbps when no download bytes were measured", async () => {
+    const fetchImpl: typeof fetch = async () => new Response("nope", { status: 503 });
+    await assert.rejects(
+      () =>
+        runSpeedTest({
+          fetchImpl,
+          provider: "cloudflare",
+          durationMs: 3000,
+          connections: 2,
+          measureUpload: true,
+        }),
+      /measured 0 bytes/,
+    );
+  });
+
+  it("reports up_mbps null when the upload fails", async () => {
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (url.includes("speed.cloudflare.com/__down")) {
+        return new Response(bytesStream(1_500_000), { status: 200 });
+      }
+      if (url.includes("speed.cloudflare.com/__up") && init?.method === "POST") {
+        return new Response("busy", { status: 500 });
+      }
+      return new Response("missing", { status: 404 });
+    };
+    const result = await runSpeedTest({
+      fetchImpl,
+      provider: "cloudflare",
+      durationMs: 3000,
+      connections: 1,
+      measureUpload: true,
+      uploadBytes: 10_000,
+    });
+    assert.ok(result.down_mbps > 0);
+    assert.equal(result.up_mbps, null);
   });
 });

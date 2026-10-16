@@ -16,6 +16,10 @@
 
 ## 무료 배포 (권장: Cloudflare Workers)
 
+> **업그레이드 순서:** `supabase/migrations/`의 새 마이그레이션을 **먼저** 적용한 뒤 Worker를 배포하고 에이전트를 업데이트하세요.
+> 원격 업데이트(`agent_update`)는 `npm run deploy`만 하고 DB 마이그레이션은 돌리지 않습니다. 순서가 바뀌면 대시보드가
+> 새 컬럼을 못 찾아 로드되지 않거나, 에이전트 report가 거부될 수 있습니다.
+
 Workers Free는 계정당 **하루 10만 요청**, Worker 크기·정적 자산까지 취미/개인 콘솔에 충분합니다.  
 별도 VPS나 Pages 요금 없이 `workers.dev` URL로 공개할 수 있습니다.
 
@@ -78,6 +82,17 @@ npm install && npm start
 
 훅이 없어도 Dashboard에서 signup을 끄면 클라이언트 `signUp`은 막힙니다. 훅은 실수로 signup이 다시 켜진 경우를 막는 이중 장치입니다.
 
+### owner / member 권한
+
+| 작업 | owner | member |
+| --- | :---: | :---: |
+| 대시보드 보기, 헬스 체크·WOL·속도 측정 요청, 서비스 추가·수정 | ✅ | ✅ |
+| 서버 추가(일반)·이름/MAC 수정 | ✅ | ✅ |
+| Proxmox 연동 추가·변경, 서버 삭제 | ✅ | ❌ |
+| 원격 업데이트(`agent_update`), 에이전트 토큰 재발급, 초대, 집 설정 | ✅ | ❌ |
+
+권한은 UI뿐 아니라 RLS·트리거(`20261017090000_review_hardening.sql`)에서도 강제됩니다.
+
 ### 무료 티어에서 알아둘 점
 
 | 항목 | Free 한도 / 메모 |
@@ -105,13 +120,14 @@ npm run dev
 - `GET /api/config` — Supabase URL/anon key + `adminProvisionedOnly` / `signupEnabled` / `inviteHookReady` (`signup_status` RPC)
 - `POST /api/bootstrap` — 집 생성 (로그인 직후, 집이 없을 때)
 - `POST /api/invite` — 집 초대 + Auth 허용 목록 (`invite_house_member`)
-- `POST /api/servers` / `DELETE /api/servers/:id`
+- `POST /api/servers` / `DELETE /api/servers/:id` — Proxmox 연동 추가·서버 삭제는 owner만
 - `POST /api/services` — 헬스 체크 추가 (같은 주소 중복 시 409, 기본으로 첫 `health_one` 작업 자동 등록 · `checkNow:false`로 끄기)
 - `PATCH /api/services/:id` — 일부 필드 수정 (주소/기대 상태가 바뀌면 결과 초기화 후 재확인)
 - `DELETE /api/services/:id`
-- `POST /api/jobs` — 인증된 작업 큐 enqueue (`wake`, `health_*`, `pve_sync`, `speed_probe`, `agent_update`)
+- `POST /api/jobs` — 인증된 작업 큐 enqueue (`wake`, `health_*`, `pve_sync`, `speed_probe`, `agent_update` — `agent_update`는 owner만)
 - `POST /api/agent/token` — 에이전트 토큰 발급 (해시만 DB 저장)
 - `GET /api/agent/poll` / `POST /api/agent/report` — 에이전트 Bearer 전용
+- Cron (`*/5 * * * *`) — `janitor_maintenance`: 에이전트 10분 무응답 시 Slack 1회 알림(재연결 시 복구 알림), `speed_samples` 90일·완료/실패 job 30일 보존
 
 ## 시안
 

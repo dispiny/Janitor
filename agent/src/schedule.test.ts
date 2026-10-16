@@ -4,6 +4,7 @@ import {
   DEFAULT_PUBLIC_IP_INTERVAL_SEC,
   DEFAULT_SPEED_INTERVAL_SEC,
   oldestServiceCheckAt,
+  ScheduleMemory,
   scheduledKinds,
 } from "./schedule.js";
 
@@ -76,5 +77,65 @@ describe("scheduledKinds", () => {
       oldestServiceCheckAt([{ last_checked_at: "2026-10-14T15:00:00.000Z" }, { last_checked_at: null }]),
       null,
     );
+  });
+});
+
+describe("scheduledKinds local memory", () => {
+  const now = Date.parse("2026-10-14T16:00:00.000Z");
+  const min = 60_000;
+
+  it("does not rerun pve_sync every tick when last_pve_at stays null (no guests)", () => {
+    const memory = new ScheduleMemory();
+    const input = { house: { pve_interval_sec: 900 }, services: [], hasPve: true, memory };
+    assert.ok(scheduledKinds({ ...input, now }).includes("pve_sync"));
+    memory.note("pve_sync", true, now);
+    // Server still says "never" — local attempt time wins.
+    assert.ok(!scheduledKinds({ ...input, now: now + 1 * min }).includes("pve_sync"));
+    assert.ok(!scheduledKinds({ ...input, now: now + 14 * min }).includes("pve_sync"));
+    assert.ok(scheduledKinds({ ...input, now: now + 15 * min }).includes("pve_sync"));
+  });
+
+  it("does not rerun speed_probe when the report failed (server timestamp stale)", () => {
+    const memory = new ScheduleMemory();
+    const house = { speed_interval_sec: 3600, last_speed_at: "2026-10-14T12:00:00.000Z" };
+    assert.ok(scheduledKinds({ now, house, services: [], hasPve: false, memory }).includes("speed_probe"));
+    memory.note("speed_probe", true, now);
+    assert.ok(
+      !scheduledKinds({ now: now + 5 * min, house, services: [], hasPve: false, memory }).includes("speed_probe"),
+    );
+  });
+
+  it("uses the newer of server timestamp and local attempt", () => {
+    const memory = new ScheduleMemory();
+    memory.note("public_ip", true, now - 3 * 3600_000); // local: 3h ago
+    const house = { public_ip_interval_sec: 7200, public_ip_checked_at: "2026-10-14T15:30:00.000Z" }; // 30m ago
+    assert.ok(!scheduledKinds({ now, house, services: [], hasPve: false, memory }).includes("public_ip"));
+  });
+
+  it("backs off repeated failures up to 4× the interval and resets on success", () => {
+    const memory = new ScheduleMemory();
+    const house = { speed_interval_sec: 3600, public_ip_interval_sec: 0 };
+    const due = (at: number) =>
+      scheduledKinds({ now: at, house, services: [], hasPve: false, memory }).includes("speed_probe");
+    const h = 3600_000;
+
+    memory.note("speed_probe", false, now); // 1st failure → 1×
+    assert.equal(memory.backoffFactor("speed_probe"), 1);
+    assert.ok(due(now + h));
+
+    memory.note("speed_probe", false, now); // 2nd → 2×
+    assert.equal(memory.backoffFactor("speed_probe"), 2);
+    assert.ok(!due(now + h));
+    assert.ok(due(now + 2 * h));
+
+    memory.note("speed_probe", false, now); // 3rd → 4×
+    memory.note("speed_probe", false, now); // 4th → still capped at 4×
+    assert.equal(memory.backoffFactor("speed_probe"), 4);
+    assert.ok(!due(now + 3 * h));
+    assert.ok(due(now + 4 * h));
+
+    memory.note("speed_probe", true, now);
+    assert.equal(memory.backoffFactor("speed_probe"), 1);
+    assert.ok(due(now + h));
   });
 });

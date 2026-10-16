@@ -27,10 +27,27 @@
         "ok": true,
         "service": "janitor-home-agent",
         "tunnelHostname": "string|null",
+        "runtime": {
+          "version": "string",
+          "node": "string",
+          "platform": "string",
+          "arch": "string",
+          "hostname": "string",
+          "uptimeSec": "number",
+          "pid": "number",
+          "cwd": "string",
+          "pollMs": "number",
+          "pm2": "boolean",
+          "pm2Name": "string|null",
+          "remoteUpdate": "boolean",
+          "deployOnUpdate": "boolean",
+          "reportedAt": "iso8601"
+        },
         "capabilities": {
           "wakeManual": "boolean",
           "publicIp": "boolean",
-          "httpCheck": "boolean"
+          "httpCheck": "boolean",
+          "remoteUpdate": "boolean"
         }
       }
     },
@@ -42,6 +59,12 @@
         "ip": "string",
         "checkedAt": "iso8601",
         "source": "string"
+      },
+      "errors": {
+        "502": {
+          "error": "public_ip_failed",
+          "message": "string"
+        }
       }
     },
     {
@@ -54,7 +77,16 @@
         "broadcast": "255.255.255.255",
         "port": 9
       },
-      "notes": "mode is optional; mac accepts ':' '-' or bare hex; broadcast defaults to 255.255.255.255, port to 9; packet is sent 3 times"
+      "notes": "mode is optional; mac accepts ':' '-' or bare hex; broadcast defaults to 255.255.255.255, port to 9; packet is sent 3 times; success means the packet was sent, not that the machine is up",
+      "response": {
+        "ok": true,
+        "mode": "manual",
+        "mac": "string",
+        "broadcast": "string",
+        "port": "number",
+        "bytes": 102,
+        "sent": 3
+      }
     },
     {
       "method": "POST",
@@ -77,7 +109,37 @@
       "httpStatus": {
         "ok": 200,
         "failed": 502
-      }
+      },
+      "notes": "Blocks link-local/metadata (169.254.0.0/16, fe80::/10, IPv4-mapped forms) and hostnames resolving to them; private LAN allowed. Redirects are not followed. useHealthToken:true without HEALTHCHECK_TOKEN → 400"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/poll/now",
+      "auth": true,
+      "response": {
+        "ok": true,
+        "started": "boolean",
+        "reason": "already_running?"
+      },
+      "httpStatus": {
+        "ok": 200,
+        "notConfigured": 400,
+        "pollFailed": 502
+      },
+      "notes": "Runs one poll tick now. started:false + reason already_running when a tick was in progress (nothing new ran)."
     }
-  ]
+  ],
+  "notes": "The Worker never calls /v1/* — the agent polls JANITOR_API_URL (/api/agent/poll → /api/agent/report). /v1/* is for local/LAN (or optional tunnel) manual use.",
+  "workerPoll": {
+    "poll": "GET $JANITOR_API_URL/api/agent/poll (Bearer AGENT_TOKEN, 30s timeout, backoff up to 5 min on failure)",
+    "report": "POST $JANITOR_API_URL/api/agent/report",
+    "reportFields": {
+      "guestSyncServerIds": "Proxmox links whose node list succeeded this round (guests pruned except failed nodes)",
+      "guestSyncFailedNodes": "{ \"<server_id>\": [\"node\", ...] } — nodes whose guest list failed; their guests are kept",
+      "pveNodes": "[{ server_id, nodes: [{ node, online }] }] — only links whose node list succeeded",
+      "speed": "{ down_mbps: number, up_mbps: number|null } — omitted when the probe failed",
+      "jobs": "[{ id: uuid, status: done|error, result?, error? }]",
+      "services[].use_health_token": "poll input: HEALTHCHECK_TOKEN is sent only when true"
+    }
+  }
 }

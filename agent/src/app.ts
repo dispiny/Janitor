@@ -165,11 +165,12 @@ export function createApp(config: AgentConfig) {
       return c.json({ error: "JANITOR_API_URL is not configured" }, 400);
     }
     try {
-      await tick({
+      const outcome = await tick({
         ...cfg,
         janitorApiUrl: cfg.janitorApiUrl,
       });
-      return c.json({ ok: true });
+      // started:false → a tick (poller loop or another nudge) was already running.
+      return c.json({ ok: true, ...outcome });
     } catch (error) {
       return c.json(
         { error: error instanceof Error ? error.message : "poll failed" },

@@ -70,11 +70,15 @@ export function drainLogBuffer(): Record<string, unknown>[] {
   return buffer.splice(0, buffer.length);
 }
 
-/** Prepend entries back if report failed (so the next tick can retry). */
+/**
+ * Prepend entries back if report failed (so the next tick can retry).
+ * Drained entries are older than anything logged since, so over capacity the
+ * oldest are dropped and the rest stay in chronological order.
+ */
 export function restoreLogBuffer(entries: Record<string, unknown>[]): void {
   if (!entries.length) return;
   buffer.unshift(...entries);
-  while (buffer.length > MAX_BUFFER) buffer.pop();
+  while (buffer.length > MAX_BUFFER) buffer.shift();
 }
 
 /** Test helper — current buffer snapshot. */

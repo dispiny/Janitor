@@ -69,4 +69,48 @@ describe("syncPveGuests", () => {
     assert.equal(result.discovered, undefined);
     assert.equal(result.guests[0]?.name, "only");
   });
+
+  it("marks nodes whose guest listing failed instead of returning them empty", async () => {
+    const fetchImpl = (async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/nodes")) {
+        return Response.json({ data: [{ node: "pve-a", status: "online" }, { node: "pve-b", status: "offline" }] });
+      }
+      if (url.includes("/nodes/pve-a/")) return Response.json({ data: [{ name: "haos", vmid: 100, status: "running" }] });
+      if (url.includes("/nodes/pve-b/")) return new Response("node offline", { status: 595 });
+      return new Response("nope", { status: 404 });
+    }) as typeof fetch;
+
+    const result = await syncPveGuests({
+      serverId: "srv-1",
+      baseUrl: "https://pve.home:8006",
+      tokenId: "t",
+      tokenSecret: "s",
+      fetchImpl,
+    });
+    assert.deepEqual(result.failedNodes, ["pve-b"]);
+    assert.ok(result.guests.every((g) => g.node === "pve-a"));
+  });
+
+  it("throws when the node list itself fails (caller must not prune)", async () => {
+    const fetchImpl = (async () => new Response("unauthorized", { status: 401 })) as typeof fetch;
+    await assert.rejects(
+      () => syncPveGuests({ serverId: "srv-1", baseUrl: "https://pve.home:8006", tokenId: "t", tokenSecret: "s", fetchImpl }),
+      /401/,
+    );
+  });
+
+  it("never follows redirects (token header must not leave the host) and sets timeouts", async () => {
+    const inits: RequestInit[] = [];
+    const fetchImpl = (async (_input: string | URL | Request, init?: RequestInit) => {
+      inits.push(init || {});
+      return new Response(null, { status: 302, headers: { location: "https://evil.example/" } });
+    }) as typeof fetch;
+    await assert.rejects(
+      () => syncPveGuests({ serverId: "srv-1", baseUrl: "https://pve.home:8006", tokenId: "t", tokenSecret: "s", fetchImpl }),
+      /redirected \(302\)/,
+    );
+    assert.equal(inits[0]?.redirect, "manual");
+    assert.ok(inits[0]?.signal instanceof AbortSignal);
+  });
 });

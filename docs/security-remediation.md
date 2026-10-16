@@ -4,8 +4,9 @@
 대상: `main` 전체 (`src/`, `public/`, `agent/`, `supabase/migrations/`) + 원격 Supabase 프로젝트 `ypklxfwpbyroxdolgiun`  
 범위: 코드 리뷰, RLS/RPC 정책 점검, Supabase Database Linter (security advisors)  
 
-**구현 상태 (이 PR):** SEC-01~06, SEC-08~11 코드/마이그레이션 적용.  
-SEC-07(평문 비밀 암호화)·SEC-12(HIBP 대시보드)는 운영 설정/후속으로 남김.
+**구현 상태:** SEC-01~06, SEC-08~11 코드/마이그레이션 적용.  
+SEC-07(평문 비밀 암호화)·SEC-12(HIBP 대시보드)는 운영 설정/후속으로 남김.  
+**2026-10-17 후속 리뷰:** SEC-10이 `agent_set_alert_state`에는 빠져 있던 것을 포함해 SEC-13~SEC-20을 [아래](#2026-10-17-후속-리뷰-sec-13sec-20)에 정리하고 `20261017090000_review_hardening.sql`로 적용.
 
 ---
 
@@ -353,3 +354,24 @@ drop policy if exists invites_insert on public.house_invites;
 create policy invites_insert on public.house_invites for insert to authenticated
   with check (public.is_house_owner(house_id));
 ```
+
+
+---
+
+## 2026-10-17 후속 리뷰 (SEC-13~SEC-20)
+
+전체 코드 리뷰에서 나온 권한·무결성 항목. 마이그레이션 `20261017090000_review_hardening.sql`과 Worker/에이전트 변경으로 적용했다.
+검증: 로컬 Postgres 15에 마이그레이션 17개를 순서대로 적용한 뒤 member/owner/anon/service_role 시나리오로 확인.
+
+| ID | 심각도 | 문제 | 수정 |
+| --- | --- | --- | --- |
+| SEC-13 | High | member가 `servers.pve_host`를 바꾸고 `pve_sync`를 넣으면 owner의 PVE 토큰이 임의 호스트로 전송됨 (`servers_all` RLS가 member UPDATE 허용) | `guard_server_write` 트리거: PVE 필드 변경은 owner만, host/토큰 ID 변경 시 `server_secrets` 삭제. `save_server_secret` owner 전용. 에이전트는 PVE 요청에 `redirect: "manual"` |
+| SEC-14 | High | member가 `agent_update`를 넣어 집 기기에서 git pull·Worker 배포·재시작 실행 | `jobs_insert` RLS + `/api/jobs` owner 검사. stale `agent_update`는 재시도 안 함 |
+| SEC-15 | Medium | SEC-10 누락: `agent_set_alert_state`가 anon/authenticated에 grant된 채 남음 (`20261013180000:136`) | service_role 전용으로 revoke |
+| SEC-16 | Medium | `HEALTHCHECK_TOKEN`이 모든 헬스 URL로 전송됨 (문서는 opt-in) | `services.use_health_token` 플래그가 true인 서비스에만 전송 |
+| SEC-17 | Medium | `agent_report` 노드 UPDATE/DELETE에 집 필터 없음 + `pve_parent_id`·`pve_guests.server_id`로 타 집 행 참조 가능 | `house_id` 필터, 트리거로 같은 집 parent만 허용, `pve_guests` client 쓰기 정책 제거 |
+| SEC-18 | Low | `houses(*)`로 `agent_token_hash`가 모든 member에게 노출 | `houses` SELECT를 컬럼 단위 grant (해시 제외). **새 컬럼 추가 시 grant 목록도 갱신 필요** |
+| SEC-19 | Low | 초대를 철회해도 `auth_provision_allowlist`가 남아 가입 가능 | invite 삭제 트리거로 허용 목록 정리 (계정이 이미 있거나 다른 초대가 있으면 유지) |
+| SEC-20 | Low | Slack mrkdwn 미이스케이프 (`<!channel>` 이름으로 전체 멘션), url-guard IPv4-mapped IPv6·DNS 우회 | Slack 텍스트 `& < >` 이스케이프, url-guard가 mapped 주소와 DNS 결과까지 검사 |
+
+남은 항목: SEC-07(PVE 토큰 암호화), SEC-12(HIBP)는 그대로 후속. member의 `speed_samples` 직접 INSERT 정책은 제거했다(에이전트 report만 기록).

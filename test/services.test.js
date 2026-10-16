@@ -19,7 +19,15 @@ test("parseServiceInput normalises a full create body", () => {
     expect_status: 401,
     manage_url: "",
     slack_on_fail: false,
+    use_health_token: false,
   });
+});
+
+test("parseServiceInput health token is opt-in", () => {
+  assert.equal(parseServiceInput({ name: "a", healthUrl: "https://a.home" }).row.use_health_token, false);
+  assert.equal(parseServiceInput({ name: "a", healthUrl: "https://a.home", useHealthToken: "true" }).row.use_health_token, false);
+  assert.equal(parseServiceInput({ name: "a", healthUrl: "https://a.home", useHealthToken: true }).row.use_health_token, true);
+  assert.deepEqual(parseServiceInput({ useHealthToken: true }, { partial: true }).row, { use_health_token: true });
 });
 
 test("parseServiceInput defaults expect status and slack", () => {

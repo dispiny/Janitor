@@ -23,6 +23,19 @@ const state = {
   jobs: [],
 };
 
+// Must match the column-level SELECT grant on houses (agent_token_hash is not readable).
+const HOUSE_COLUMNS = [
+  "id", "name", "speed_threshold_mbps", "slack_channel", "agent_url", "agent_host_label",
+  "agent_last_seen_at", "public_ip", "public_ip_checked_at", "created_at", "updated_at",
+  "agent_status", "alert_state", "health_interval_sec", "pve_interval_sec",
+  "speed_interval_sec", "public_ip_interval_sec", "agent_log_tail", "alert_after_failures",
+  "agent_token_configured",
+].join(", ");
+
+/** Same window as the Worker cron (janitor_maintenance p_offline_after_sec). */
+const AGENT_OFFLINE_MS = 10 * 60_000;
+const SPEED_SAMPLES = 24;
+
 function isOwner() {
   return state.membershipRole === "owner";
 }
@@ -123,6 +136,7 @@ function mapService(row) {
     expect: row.expect_status,
     manageUrl: row.manage_url,
     slack: row.slack_on_fail,
+    useHealthToken: Boolean(row.use_health_token),
     ok: row.last_ok,
     code: row.last_code,
     ms: row.last_ms,
@@ -152,7 +166,7 @@ async function loadHouseData() {
   await state.sb.rpc("claim_house_invites");
   const { data: membership, error } = await state.sb
     .from("house_members")
-    .select("house_id, email, role, houses(*)")
+    .select(`house_id, email, role, houses(${HOUSE_COLUMNS})`)
     .eq("user_id", userId)
     .limit(1)
     .maybeSingle();
@@ -178,7 +192,7 @@ async function loadHouseData() {
     state.sb.from("servers").select("*").eq("house_id", houseId).order("created_at"),
     state.sb.from("services").select("*").eq("house_id", houseId).order("created_at"),
     state.sb.from("pve_guests").select("*").eq("house_id", houseId),
-    state.sb.from("speed_samples").select("*").eq("house_id", houseId).order("recorded_at", { ascending: false }).limit(12),
+    state.sb.from("speed_samples").select("*").eq("house_id", houseId).order("recorded_at", { ascending: false }).limit(SPEED_SAMPLES),
     state.sb.from("agent_jobs").select("id, kind, status, error, result, created_at, updated_at")
       .eq("house_id", houseId).order("created_at", { ascending: false }).limit(40),
   ]);
@@ -203,10 +217,18 @@ function bars(target, values, threshold) {
     target.appendChild(empty);
     return;
   }
-  const max = Math.max(...values, threshold || 1, 1);
+  const measured = values.filter((v) => v != null && Number.isFinite(v));
+  const max = Math.max(...measured, threshold || 1, 1);
   values.forEach((value) => {
     const bar = document.createElement("div");
-    bar.className = "bar" + (value < threshold ? " low" : "");
+    if (value == null || !Number.isFinite(value)) {
+      // e.g. upload missing when only download succeeded
+      bar.className = "bar none";
+      bar.title = "측정 없음";
+      target.appendChild(bar);
+      return;
+    }
+    bar.className = "bar" + (threshold && value < threshold ? " low" : "");
     bar.style.height = Math.max(8, Math.min(100, (value / max) * 100)) + "%";
     bar.title = value + " Mbps";
     target.appendChild(bar);
@@ -254,7 +276,7 @@ function serverRow(server, index, withDelete) {
   manage.addEventListener("click", () => openManage(server.manageUrl || server.pve?.host || ""));
   actions.appendChild(manage);
   // Node rows are re-created on every sync; they go away by unlinking the API in settings.
-  if (withDelete && !server.parentId) {
+  if (withDelete && !server.parentId && isOwner()) {
     const remove = document.createElement("button");
     remove.className = "text-btn";
     remove.type = "button";
@@ -384,7 +406,8 @@ function renderPveLinks() {
       showToast(`${server.name} 연동을 해제했습니다.`);
       await refresh();
     }));
-    actions.append(sync, remove);
+    actions.append(sync);
+    if (isOwner()) actions.append(remove);
     row.append(label, actions);
     host.appendChild(row);
   });
@@ -490,6 +513,13 @@ function agentStatus(house = state.house) {
   return house?.agent_status && typeof house.agent_status === "object" ? house.agent_status : {};
 }
 
+/** Silent long enough that the cron has (or will) page Slack. */
+function isAgentOffline(house = state.house) {
+  if (house?.alert_state && typeof house.alert_state === "object" && house.alert_state["agent:offline"]) return true;
+  return Boolean(house?.agent_last_seen_at) &&
+    Date.now() - new Date(house.agent_last_seen_at).getTime() >= AGENT_OFFLINE_MS;
+}
+
 function isAgentConnected(house = state.house) {
   return Boolean(house?.agent_last_seen_at) &&
     Date.now() - new Date(house.agent_last_seen_at).getTime() < 5 * 60_000;
@@ -509,7 +539,8 @@ function renderAgents() {
   if (!host) return;
   host.innerHTML = "";
   const house = state.house;
-  if (!house?.agent_token_hash && !house?.agent_last_seen_at) {
+  // agent_token_hash is not readable by clients; agent_token_configured mirrors whether a token exists.
+  if (!house?.agent_token_configured && !house?.agent_last_seen_at && !house?.agent_url && !house?.agent_host_label) {
     const empty = document.createElement("p");
     empty.className = "sub";
     empty.textContent = "아직 등록된 에이전트가 없습니다. 설정에서 토큰을 발급해 pm2로 실행하세요.";
@@ -536,7 +567,9 @@ function renderAgents() {
   card.querySelector("h3").textContent = title;
   card.querySelector(".sub").textContent = online
     ? `온라인 · v${status.version || "?"} · ${status.pm2 ? "pm2" : "process"}`
-    : "오프라인 · 마지막 폴링 이후 응답 없음";
+    : house.agent_last_seen_at
+      ? `오프라인 · 마지막 응답 ${relativeTime(house.agent_last_seen_at)}`
+      : "오프라인 · 아직 폴링 기록 없음";
   const badge = card.querySelector(".badge");
   badge.textContent = online ? "온라인" : "오프라인";
   badge.classList.add(online ? "on" : "off");
@@ -567,7 +600,7 @@ function renderAgents() {
   updateBtn.textContent = status.deployOnUpdate ? "업데이트 · 배포" : "원격 업데이트";
   updateBtn.disabled = !online || !status.remoteUpdate;
   updateBtn.addEventListener("click", () => enqueueAgentUpdate());
-  actions.appendChild(updateBtn);
+  if (isOwner()) actions.appendChild(updateBtn);
   host.appendChild(card);
 }
 
@@ -704,6 +737,10 @@ function renderAgentJobs() {
 
 async function enqueueAgentUpdate() {
   if (!state.house) return;
+  if (!isOwner()) {
+    showToast("원격 업데이트는 owner만 할 수 있습니다.");
+    return;
+  }
   if (!isAgentConnected()) {
     showToast("에이전트가 오프라인입니다.");
     return;
@@ -712,7 +749,7 @@ async function enqueueAgentUpdate() {
     showToast("에이전트에서 AGENT_ALLOW_REMOTE_UPDATE=true 가 필요합니다.");
     return;
   }
-  await enqueueJob("agent_update");
+  if (!(await enqueueJob("agent_update", {}, { quiet: true }))) return;
   showToast(
     agentStatus().deployOnUpdate
       ? "업데이트·배포 작업을 넣었습니다. git pull 후 npm run deploy가 실행됩니다."
@@ -726,7 +763,7 @@ function render() {
   const threshold = Number(house.speed_threshold_mbps) || 100;
   const latest = latestSpeed();
   const down = latest ? Number(latest.down_mbps) : null;
-  const up = latest ? Number(latest.up_mbps) : null;
+  const up = latest && latest.up_mbps != null ? Number(latest.up_mbps) : null;
   const dropped = down != null && down < threshold;
   const agentConnected = isAgentConnected(house);
   const status = agentStatus(house);
@@ -767,6 +804,9 @@ function render() {
     const n = Number(sec);
     return String(Number.isFinite(n) ? Math.round(n / 60) : fallback);
   };
+  if (document.activeElement !== $("alert-after-failures")) {
+    $("alert-after-failures").value = String(Number(house.alert_after_failures) || 1);
+  }
   if (document.activeElement !== $("interval-health")) {
     $("interval-health").value = mins(house.health_interval_sec, 5);
   }
@@ -785,11 +825,19 @@ function render() {
   if (document.activeElement !== $("agent-host-label")) {
     $("agent-host-label").value = house.agent_host_label || status.hostname || "";
   }
-  const updateEnabled = agentConnected && Boolean(status.remoteUpdate);
+  const updateEnabled = agentConnected && Boolean(status.remoteUpdate) && isOwner();
   ["agent-update", "agent-update-dash"].forEach((id) => {
     const btn = $(id);
-    if (btn) btn.disabled = !updateEnabled;
+    if (!btn) return;
+    btn.disabled = !updateEnabled;
+    btn.hidden = !isOwner();
   });
+  const offlineEl = $("agent-offline-alert");
+  const offline = isAgentOffline(house);
+  offlineEl.hidden = !offline;
+  offlineEl.textContent = offline
+    ? `에이전트 오프라인 · 마지막 연결 ${relativeTime(house.agent_last_seen_at)}. 헬스 체크·속도 측정·작업이 멈춰 있습니다.`
+    : "";
   renderAgents();
   $("dash-threshold").textContent = down == null
     ? `임계값 ${threshold} Mbps · 측정 대기`
@@ -809,8 +857,9 @@ function render() {
   $("summary-down").textContent = String(downCount);
 
   const history = state.speeds.map((s) => Number(s.down_mbps));
-  bars($("dash-bars"), history, threshold);
+  bars($("dash-bars"), history.slice(-12), threshold);
   bars($("speed-bars"), history, threshold);
+  bars($("speed-bars-up"), state.speeds.map((s) => (s.up_mbps == null ? null : Number(s.up_mbps))), 0);
 
   const alertText = dropped
     ? `다운로드 ${down.toFixed(1)} Mbps가 임계값 ${threshold} Mbps보다 낮습니다. ${house.slack_channel} 알림 대상입니다.`
@@ -889,8 +938,9 @@ async function refresh() {
   render();
 }
 
+/** Returns true when the job was queued; failures are toasted and return false. */
 async function enqueueJob(kind, payload = {}, { quiet = false } = {}) {
-  if (!state.house) return;
+  if (!state.house) return false;
   try {
     await api("/api/jobs", {
       method: "POST",
@@ -898,14 +948,15 @@ async function enqueueJob(kind, payload = {}, { quiet = false } = {}) {
     });
   } catch (err) {
     showToast(err.message || "작업을 넣지 못했습니다.");
-    return;
+    return false;
   }
   if (!quiet) {
     showToast(isAgentConnected()
       ? "에이전트에 작업을 넣었습니다."
       : "작업을 넣었습니다. 에이전트가 오프라인이라 연결되면 처리됩니다.");
   }
-  await refresh();
+  await refresh().catch(() => {});
+  return true;
 }
 
 function openManage(url) {
@@ -928,6 +979,14 @@ function applyOwnerUi() {
     const el = $(id);
     if (el) el.disabled = !owner;
   });
+  // Proxmox link / PVE fields on the server form are owner-only (DB trigger enforces it).
+  const pveForm = $("pve-link-form");
+  if (pveForm) pveForm.hidden = !owner;
+  const srvPve = $("srv-pve");
+  if (srvPve) {
+    srvPve.disabled = !owner;
+    srvPve.closest("label")?.toggleAttribute("hidden", !owner);
+  }
   const invite = $("invite-form");
   if (invite) {
     invite.querySelectorAll("input, button").forEach((el) => {
@@ -991,6 +1050,7 @@ function openServiceModal(service = null) {
   $("svc-expect").value = String(editing?.expect || 200);
   $("svc-manage").value = editing?.manageUrl || "";
   $("svc-slack").checked = editing ? Boolean(editing.slack) : true;
+  $("svc-health-token").checked = editing ? Boolean(editing.useHealthToken) : false;
   $("svc-check-now").checked = true;
   $("svc-error").textContent = "";
   fillHostOptions();
@@ -1010,7 +1070,17 @@ async function ensureHouse(houseName) {
   });
 }
 
-async function enterApp() {
+/** onAuthStateChange and the login submit can both fire; run one entry at a time. */
+function enterApp() {
+  if (!enterApp._inflight) {
+    enterApp._inflight = enterAppOnce().finally(() => {
+      enterApp._inflight = null;
+    });
+  }
+  return enterApp._inflight;
+}
+
+async function enterAppOnce() {
   $("auth").hidden = true;
   $("app").hidden = false;
   await loadHouseData();
@@ -1196,6 +1266,7 @@ async function init() {
       expectStatus: Number($("svc-expect").value || 200),
       manageUrl: $("svc-manage").value.trim(),
       slackOnFail: $("svc-slack").checked,
+      useHealthToken: $("svc-health-token").checked,
     };
     submit.disabled = true;
     try {
@@ -1242,9 +1313,13 @@ async function init() {
       $(id).value = String(mins);
       return mins * 60;
     };
+    const rawAfter = Math.floor(Number($("alert-after-failures").value));
+    const alertAfter = Number.isFinite(rawAfter) ? Math.max(1, Math.min(10, rawAfter)) : 1;
+    $("alert-after-failures").value = String(alertAfter);
     const { error } = await state.sb.from("houses").update({
       speed_threshold_mbps: threshold,
       slack_channel: channel,
+      alert_after_failures: alertAfter,
       health_interval_sec: toSec("interval-health", 5),
       pve_interval_sec: toSec("interval-pve", 15),
       speed_interval_sec: toSec("interval-speed", 60),
@@ -1255,7 +1330,7 @@ async function init() {
       showToast(error.message);
       return;
     }
-    showToast("임계값·자동 확인 주기를 저장했습니다.");
+    showToast("임계값·알림 조건·자동 확인 주기를 저장했습니다.");
     await refresh();
   });
 
@@ -1291,19 +1366,35 @@ async function init() {
   });
 
   $("mint-agent-token").addEventListener("click", async () => {
-    const data = await api("/api/agent/token", {
-      method: "POST",
-      body: JSON.stringify({
-        houseId: state.house.id,
-        agentUrl: $("agent-url").value.trim(),
-        agentHostLabel: $("agent-host-label").value.trim(),
-      }),
-    });
-    $("agent-token-box").hidden = false;
-    $("agent-token-box").textContent = data.token;
-    $("agent-token-hint").textContent = "이 토큰을 복사해 에이전트 AGENT_TOKEN에 넣으세요. 다시 볼 수 없습니다.";
-    showToast("에이전트 토큰을 발급했습니다.");
-    await refresh();
+    if (!isOwner()) {
+      showToast("owner만 에이전트 토큰을 발급할 수 있습니다.");
+      return;
+    }
+    const rotating = Boolean(state.house?.agent_last_seen_at || state.house?.agent_url);
+    if (rotating && !window.confirm(
+      "새 토큰을 발급하면 기존 토큰은 바로 무효가 됩니다. 지금 돌고 있는 에이전트는 .env의 AGENT_TOKEN을 새 값으로 바꾸고 재시작할 때까지 401로 거부됩니다. 계속할까요?",
+    )) return;
+    const button = $("mint-agent-token");
+    button.disabled = true;
+    try {
+      const data = await api("/api/agent/token", {
+        method: "POST",
+        body: JSON.stringify({
+          houseId: state.house.id,
+          agentUrl: $("agent-url").value.trim(),
+          agentHostLabel: $("agent-host-label").value.trim(),
+        }),
+      });
+      $("agent-token-box").hidden = false;
+      $("agent-token-box").textContent = data.token;
+      $("agent-token-hint").textContent = "이 토큰을 복사해 에이전트 AGENT_TOKEN에 넣으세요. 다시 볼 수 없습니다.";
+      showToast("에이전트 토큰을 발급했습니다.");
+      await refresh();
+    } catch (err) {
+      showToast(err.message || "토큰을 발급하지 못했습니다.");
+    } finally {
+      button.disabled = !isOwner();
+    }
   });
 
   $("pve-link-form").addEventListener("submit", async (event) => {

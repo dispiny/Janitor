@@ -2,7 +2,8 @@ import { log } from "./log.js";
 
 export type SpeedTestResult = {
   down_mbps: number;
-  up_mbps: number;
+  /** null when upload was skipped or failed (never a fake 0). */
+  up_mbps: number | null;
   provider: "fast.com" | "cloudflare";
   connections: number;
   duration_ms: number;
@@ -118,6 +119,8 @@ async function measureParallelDownload(
   let stopped = false;
   const shouldStop = () => stopped;
 
+  let lastError: string | null = null;
+
   const workers = Array.from({ length: opts.connections }, async (_, index) => {
     while (!shouldStop()) {
       const url = urls[index % urls.length];
@@ -127,14 +130,17 @@ async function measureParallelDownload(
           headers: { "cache-control": "no-cache" },
         });
         if (!res.ok || !res.body) {
+          lastError = `HTTP ${res.status}`;
+          await res.body?.cancel().catch(() => undefined);
           await new Promise((r) => setTimeout(r, 50));
           continue;
         }
         await drainUntil(res, shouldStop, (n) => {
           bytes += n;
         });
-      } catch {
+      } catch (error) {
         if (shouldStop()) break;
+        lastError = error instanceof Error ? error.message : String(error);
         await new Promise((r) => setTimeout(r, 50));
       }
     }
@@ -151,6 +157,12 @@ async function measureParallelDownload(
   const countedBytes = Math.max(0, bytes - bytesAfterWarmup);
   const bitsPerSecond = (countedBytes * 8) / (measureMs / 1000);
   const mbps = roundMbps(bitsPerSecond);
+  if (countedBytes <= 0) {
+    // Every worker failed (or the link is dead) — that is a failed probe, not 0 Mbps.
+    throw new Error(
+      `${opts.label} download measured 0 bytes${lastError ? ` (last error: ${lastError})` : ""}`,
+    );
+  }
   log("speedtest.download.complete", {
     provider: opts.label,
     connections: opts.connections,
@@ -229,6 +241,8 @@ export async function runSpeedTest(options: SpeedTestOptions = {}): Promise<Spee
   const tryCf = provider === "cloudflare" || provider === "auto";
 
   if (tryFast) {
+    // Covers token discovery, target fetch and the download itself: targets that were
+    // fetched but all failed to download also fall back to Cloudflare.
     try {
       const targets = await fetchFastTargets(fetchImpl, Math.max(connections, 3));
       down = await measureParallelDownload(targets, {
@@ -264,7 +278,7 @@ export async function runSpeedTest(options: SpeedTestOptions = {}): Promise<Spee
     used = "cloudflare";
   }
 
-  let up = { mbps: 0, bytes: 0, ms: 0 };
+  let up: { mbps: number | null; bytes: number; ms: number } = { mbps: null, bytes: 0, ms: 0 };
   if (measureUpload) {
     try {
       up = await measureCloudflareUpload(fetchImpl, uploadBytes);

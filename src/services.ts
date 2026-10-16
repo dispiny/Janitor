@@ -10,6 +10,8 @@ export type ServiceInput = {
   expectStatus?: unknown;
   manageUrl?: unknown;
   slackOnFail?: unknown;
+  /** Send the agent's HEALTHCHECK_TOKEN as Bearer for this service only. */
+  useHealthToken?: unknown;
 };
 
 export type ServiceRow = {
@@ -19,6 +21,7 @@ export type ServiceRow = {
   expect_status?: number;
   manage_url?: string;
   slack_on_fail?: boolean;
+  use_health_token?: boolean;
 };
 
 export type ServiceParseResult = { ok: true; row: ServiceRow } | { ok: false; error: string };
@@ -82,6 +85,11 @@ export function parseServiceInput(body: ServiceInput, options: { partial?: boole
 
   if (has("slackOnFail")) {
     row.slack_on_fail = body.slackOnFail !== false;
+  }
+
+  if (has("useHealthToken")) {
+    // Opt-in: the token must never go to a URL the user did not mark.
+    row.use_health_token = body.useHealthToken === true;
   }
 
   if (partial && Object.keys(row).length === 0) {

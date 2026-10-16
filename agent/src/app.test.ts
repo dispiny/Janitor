@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createApp } from "./app.js";
+import { tick } from "./poller.js";
 import type { AgentConfig } from "./config.js";
 
 const config: AgentConfig = {
@@ -77,7 +78,7 @@ describe("home agent HTTP API", () => {
     assert.equal(res.status, 400);
   });
 
-  it("broadcasts a magic packet to the limited broadcast address by default", async () => {
+  it("broadcasts a magic packet to the limited broadcast address by default", async (t) => {
     const app = createApp(config);
     const res = await app.request("/v1/wake", {
       method: "POST",
@@ -87,6 +88,15 @@ describe("home agent HTTP API", () => {
       },
       body: JSON.stringify({ mac: "aa-bb-cc-dd-ee-01", port: 40009 }),
     });
+    if (res.status === 500) {
+      const err = (await res.json()) as { error?: string };
+      // Sandboxes / CI runners / VPN-only hosts have no route for 255.255.255.255.
+      if (/EHOSTUNREACH|ENETUNREACH|EADDRNOTAVAIL|EPERM|EACCES/.test(err.error || "")) {
+        t.skip(`broadcast not available here: ${err.error}`);
+        return;
+      }
+      assert.fail(err.error);
+    }
     assert.equal(res.status, 200);
     const body = (await res.json()) as { mac: string; broadcast: string; sent: number };
     assert.equal(body.mac, "AA:BB:CC:DD:EE:01");
@@ -128,5 +138,29 @@ describe("home agent HTTP API", () => {
     assert.equal(res.status, 400);
     const body = (await res.json()) as { error: string };
     assert.equal(body.error, "url_not_allowed");
+  });
+
+  it("poll/now reports started:false when a tick is already running", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const cfg = { ...config, janitorApiUrl: "http://worker.test" };
+    const running = tick(cfg, {
+      fetchImpl: (async () => {
+        await gate;
+        return Response.json({ error: "stop" }, { status: 503 });
+      }) as typeof fetch,
+    }).catch(() => undefined);
+
+    const app = createApp(cfg);
+    const res = await app.request("/v1/poll/now", {
+      method: "POST",
+      headers: { authorization: "Bearer test-token" },
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true, started: false, reason: "already_running" });
+    release();
+    await running;
   });
 });

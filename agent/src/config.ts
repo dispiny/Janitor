@@ -30,6 +30,10 @@ export type AgentConfig = {
   pm2AppName?: string;
   /** Repo/workdir for remote updates (defaults to process.cwd()). */
   agentRepoDir?: string;
+  /** AGENT_UPDATE_REQUIRE_SIGNED: `git verify-commit` the pulled HEAD before installing. */
+  requireSignedUpdate?: boolean;
+  /** PVE_TLS_INSECURE: skip TLS verification for Proxmox API (self-signed). */
+  pveTlsInsecure?: boolean;
 };
 
 export function readConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
@@ -41,10 +45,13 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
     throw new Error("PORT must be an integer between 1 and 65535");
   }
 
-  const pollMs = Number(env.AGENT_POLL_MS ?? "15000");
-  if (!Number.isFinite(pollMs) || pollMs < 3000) {
+  const rawPollMs = Number(env.AGENT_POLL_MS ?? "15000");
+  if (!Number.isFinite(rawPollMs) || rawPollMs < 3000) {
     throw new Error("AGENT_POLL_MS must be >= 3000");
   }
+  // The Worker cron flags an agent offline after 10 min without poll/report; clamp
+  // (not throw) so an older .env still boots after a remote update.
+  const pollMs = Math.min(rawPollMs, 300_000);
 
   const speedProbeBytes = Number(env.SPEED_PROBE_BYTES ?? "2000000");
   if (!Number.isInteger(speedProbeBytes) || speedProbeBytes < 1000 || speedProbeBytes > 5_000_000) {
@@ -91,5 +98,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
     deployOnUpdate,
     pm2AppName: env.PM2_APP_NAME?.trim() || undefined,
     agentRepoDir: env.AGENT_REPO_DIR?.trim() || undefined,
+    requireSignedUpdate: /^(1|true|yes)$/i.test(env.AGENT_UPDATE_REQUIRE_SIGNED?.trim() || ""),
+    pveTlsInsecure: /^(1|true|yes)$/i.test(env.PVE_TLS_INSECURE?.trim() || ""),
   };
 }
