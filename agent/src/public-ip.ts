@@ -48,28 +48,23 @@ async function fromIfconfig(signal: AbortSignal): Promise<string> {
   return assertIp(await response.text(), "ifconfig.me");
 }
 
+/** Each source gets its own timeout so a slow first source cannot pre-abort the fallback. */
 export async function resolvePublicIp(timeoutMs = 5000): Promise<PublicIpResult> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
   const failures: string[] = [];
 
   try {
-    try {
-      const ip = await fromIpify(controller.signal);
-      return { ip, checkedAt: new Date().toISOString(), source: "ipify" };
-    } catch (error) {
-      failures.push(error instanceof Error ? error.message : "ipify failed");
-    }
-
-    try {
-      const ip = await fromIfconfig(controller.signal);
-      return { ip, checkedAt: new Date().toISOString(), source: "ifconfig.me" };
-    } catch (error) {
-      failures.push(error instanceof Error ? error.message : "ifconfig.me failed");
-    }
-
-    throw new AgentError("PUBLIC_IP_FAILED", failures.join("; "));
-  } finally {
-    clearTimeout(timer);
+    const ip = await fromIpify(AbortSignal.timeout(timeoutMs));
+    return { ip, checkedAt: new Date().toISOString(), source: "ipify" };
+  } catch (error) {
+    failures.push(error instanceof Error ? error.message : "ipify failed");
   }
+
+  try {
+    const ip = await fromIfconfig(AbortSignal.timeout(timeoutMs));
+    return { ip, checkedAt: new Date().toISOString(), source: "ifconfig.me" };
+  } catch (error) {
+    failures.push(error instanceof Error ? error.message : "ifconfig.me failed");
+  }
+
+  throw new AgentError("PUBLIC_IP_FAILED", failures.join("; "));
 }

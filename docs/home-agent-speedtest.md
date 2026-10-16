@@ -10,13 +10,19 @@
    - 처음 ~2초는 warm-up으로 버리고 (TCP slow-start)  
    - 나머지 구간의 `읽은 바이트 × 8 / 초` → **Mbps**
 4. **업로드** — Cloudflare `speed.cloudflare.com/__up` 에 POST (기본 4MiB)
-5. Fast.com 실패 시 `SPEEDTEST_PROVIDER=auto`면 Cloudflare 병렬 다운로드로 폴백
+5. Fast.com 실패 시(토큰·대상 조회 실패, 또는 대상은 받았지만 모든 다운로드가 실패해 0바이트) `SPEEDTEST_PROVIDER=auto`면 Cloudflare 병렬 다운로드로 폴백
+
+## 실패 처리
+
+- 다운로드가 0바이트면 **0 Mbps로 보고하지 않고** job을 `error`로 끝냅니다. 이때 report에 `speed`가 없습니다
+- 업로드만 실패하면 `up_mbps: null` (0이 아님)
+- 자동 스케줄 측정이 연속 실패하면 다음 시도를 주기 ×2, ×4(최대)로 늦춥니다
 
 ## 단위
 
 | 필드 | 단위 |
 | --- | --- |
-| `down_mbps` / `up_mbps` | **Mbps** (메가비트/초), 소수 1자리 |
+| `down_mbps` / `up_mbps` | **Mbps** (메가비트/초), 소수 1자리. `up_mbps`는 업로드 실패/미측정 시 `null` |
 | `bytes_down` / `bytes_up` | 바이트 |
 | `duration_ms` | 실제 측정 구간(ms) |
 | `connections` | 병렬 연결 수 |

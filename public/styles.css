@@ -282,6 +282,9 @@
     .bars { display: flex; align-items: flex-end; gap: 4px; height: 40px; margin-top: 14px; }
     .bar { flex: 1; background: #171a20; min-height: 4px; border-radius: 2px 2px 0 0; }
     .bar.low { background: var(--danger); }
+    .bars-up { height: 24px; margin-top: 6px; }
+    .bars-up .bar { background: #7a8290; }
+    .bar.none { background: transparent; border-bottom: 1px dashed var(--faint, #c9c3b8); min-height: 0; }
     .stat-num { font-size: 24px; font-weight: 600; margin-top: 6px; letter-spacing: -0.03em; }
     .stat-num em { font-style: normal; color: var(--muted); font-weight: 500; }
 

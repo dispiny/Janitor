@@ -59,6 +59,7 @@
           </div>
           <button class="ghost" id="refresh" type="button">상태 다시 읽기</button>
         </div>
+        <div class="banner" id="agent-offline-alert" hidden></div>
         <div class="banner" id="dash-alert" hidden></div>
         <div class="metrics">
           <article class="card">
@@ -167,8 +168,10 @@
               <div><span>다운로드</span><b id="speed-down">—</b></div>
               <div><span>업로드</span><b id="speed-up">—</b></div>
             </div>
-            <div class="bars" id="speed-bars"></div>
-            <p class="sub">홈 에이전트가 보고한 실제 측정만 표시합니다.</p>
+            <div class="bars" id="speed-bars" aria-label="다운로드 최근 측정"></div>
+            <div class="label" style="margin-top:10px">업로드</div>
+            <div class="bars bars-up" id="speed-bars-up" aria-label="업로드 최근 측정"></div>
+            <p class="sub">홈 에이전트가 보고한 실제 측정만 표시합니다 (최근 24회).</p>
           </article>
           <article class="card">
             <div class="card-label">임계값 · Slack</div>
@@ -179,6 +182,10 @@
             <label class="field">
               <span>채널 표시 이름</span>
               <input id="slack-channel" type="text" value="#alerts-janitor">
+            </label>
+            <label class="field">
+              <span>연속 실패 몇 번이면 알림 (1~10, 기본 1)</span>
+              <input id="alert-after-failures" type="number" min="1" max="10" step="1" value="1">
             </label>
             <div class="card-label" style="margin-top:8px">자동 확인 주기 (분, 0=끔)</div>
             <p class="hint">에이전트가 폴링할 때 지난 주기를 보고 알아서 돌립니다. 기본값은 바뀌는 빈도에 맞춰 두었습니다.</p>
@@ -248,7 +255,7 @@
               <button class="primary" type="submit">초대</button>
             </form>
             <p class="hint">초대한 이메일은 허용 목록에 올라갑니다. 그다음 Supabase → Authentication → Users에서 같은 이메일로 사용자를 만든 뒤, 상대방이 로그인하면 집에 합류합니다. 앱에서 회원가입은 할 수 없습니다.</p>
-            <p class="hint" id="owner-only-hint" hidden>집 이름·초대·에이전트 토큰·속도/슬랙 설정은 owner만 변경할 수 있습니다.</p>
+            <p class="hint" id="owner-only-hint" hidden>집 이름·초대·에이전트 토큰·속도/슬랙 설정·원격 업데이트·서버 삭제·Proxmox 연동은 owner만 할 수 있습니다.</p>
           </article>
           <article class="card">
             <div class="card-label">연동</div>
@@ -356,6 +363,7 @@
       <label class="field"><span>기대 HTTP 상태</span><input id="svc-expect" type="number" min="100" max="599" value="200"></label>
       <label class="field"><span>관리 페이지 URL</span><input id="svc-manage" type="url" placeholder="https://ha.home"></label>
       <label class="check"><input id="svc-slack" type="checkbox" checked> 실패하면 Slack으로 알림</label>
+      <label class="check"><input id="svc-health-token" type="checkbox"> 에이전트 HEALTHCHECK_TOKEN을 Bearer로 보냄 (이 서비스만)</label>
       <label class="check" id="svc-check-now-row"><input id="svc-check-now" type="checkbox" checked> 추가하면 바로 한 번 확인</label>
       <p class="hint">호출에 필요한 토큰이 있으면 에이전트의 <span class="env">HEALTHCHECK_TOKEN</span>만 읽습니다. 돌아가는 곳을 Proxmox 게스트 이름과 같게 적으면 현황의 게스트 칸에 헬스가 붙습니다.</p>
       <p class="error" id="svc-error"></p>

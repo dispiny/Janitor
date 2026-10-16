@@ -20,6 +20,10 @@
   // Keep dashboard Variables on deploy (secrets are never wiped either).
   // Without this, a deploy can delete SUPABASE_* you set only in the CF UI.
   "keep_vars": true,
+  // Cron: janitor_maintenance() — retention cleanup + "에이전트 응답 없음" Slack alert.
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
   // Public project URL only — never commit SUPABASE_ANON_KEY / SERVICE_ROLE here.
   "vars": {
     "SUPABASE_URL": "https://ypklxfwpbyroxdolgiun.supabase.co"

@@ -30,3 +30,18 @@ test("drain clears buffer; restore puts entries back", () => {
   assert.equal(peekLogBuffer().length, 1);
   clearLogBuffer();
 });
+
+test("restore over capacity keeps the newest entries in chronological order", () => {
+  clearLogBuffer();
+  for (let i = 0; i < 60; i += 1) log("old.event", { n: i });
+  const drained = drainLogBuffer();
+  for (let i = 60; i < 120; i += 1) log("new.event", { n: i });
+  restoreLogBuffer(drained);
+  const peek = peekLogBuffer();
+  assert.equal(peek.length, 100);
+  const ns = peek.map((e) => e.n as number);
+  assert.equal(ns[0], 20);
+  assert.equal(ns[ns.length - 1], 119);
+  assert.deepEqual(ns, [...ns].sort((a, b) => a - b));
+  clearLogBuffer();
+});

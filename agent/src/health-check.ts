@@ -1,4 +1,4 @@
-import { assertAllowedHttpUrl } from "./url-guard.js";
+import { assertAllowedHttpUrlResolved } from "./url-guard.js";
 
 export type HttpCheckInput = {
   url: string;
@@ -21,7 +21,7 @@ export async function checkHttp(input: HttpCheckInput): Promise<HttpCheckResult>
   const timeoutMs = input.timeoutMs ?? 8000;
   const started = performance.now();
 
-  const allowed = assertAllowedHttpUrl(input.url);
+  const allowed = await assertAllowedHttpUrlResolved(input.url);
   if (!allowed.ok) {
     return {
       url: input.url,
@@ -49,6 +49,8 @@ export async function checkHttp(input: HttpCheckInput): Promise<HttpCheckResult>
       headers,
     });
     const ms = Math.round(performance.now() - started);
+    // Status is all we need — release the socket instead of buffering the body.
+    await response.body?.cancel().catch(() => undefined);
     return {
       url: allowed.url,
       ok: response.status === expectStatus,

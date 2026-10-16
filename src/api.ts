@@ -1,6 +1,6 @@
 import type { Env } from "./env";
-import { dedupeAlerts } from "./alert-dedupe";
-import { buildDeploySuccessMessage, buildOpsAlert, notifySlack } from "./slack";
+import { dedupeAlerts, withoutFresh, type AlertState } from "./alert-dedupe";
+import { buildDeploySuccessMessage, buildOpsAlert, buildRecoveryMessage, notifySlack } from "./slack";
 import { anonClient, serviceClient, sha256Hex, userClient } from "./supabase";
 import { isUuid, parseServiceInput, type ServiceInput } from "./services";
 import { assertHttpUrl } from "./urls";
@@ -12,6 +12,26 @@ const json = (data: unknown, status = 200) =>
     status,
     headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
   });
+
+class BadRequestError extends Error {}
+
+/** Malformed / non-object JSON bodies are a client error (400), not a Worker crash (500). */
+async function readJson<T>(req: Request): Promise<T> {
+  let value: unknown;
+  try {
+    value = await req.json();
+  } catch {
+    throw new BadRequestError("요청 본문이 올바른 JSON이 아닙니다.");
+  }
+  if (value == null || typeof value !== "object" || Array.isArray(value)) {
+    throw new BadRequestError("요청 본문은 JSON 객체여야 합니다.");
+  }
+  return value as T;
+}
+
+function log(event: string, fields: Record<string, unknown>) {
+  console.log(JSON.stringify({ ts: new Date().toISOString(), event, ...fields }));
+}
 
 function bearer(req: Request): string | null {
   const h = req.headers.get("authorization") || "";
@@ -37,6 +57,8 @@ async function requireHouseOwner(
   if (!data) return json({ error: "owner만 할 수 있습니다." }, 403);
   return null;
 }
+
+export const DEFAULT_SLACK_CHANNEL = "#alerts-janitor";
 
 const JOB_KINDS = new Set(["wake", "health_all", "health_one", "pve_sync", "speed_probe", "agent_update"]);
 
@@ -73,6 +95,156 @@ function agentRpcError(message: string): Response {
   return json({ error: message }, status);
 }
 
+type AgentReportBody = {
+  houseName?: string;
+  agentStatus?: {
+    version?: string;
+    hostname?: string;
+  };
+  services?: Array<{
+    id?: string;
+    name?: string;
+    host?: string;
+    url?: string;
+    ok: boolean;
+    code?: number;
+    expect?: number;
+    ms?: number;
+    error?: string;
+    slackOnFail?: boolean;
+  }>;
+  speed?: { down_mbps: number; up_mbps?: number };
+  jobs?: Array<{
+    id?: string;
+    kind?: string;
+    status: string;
+    error?: string;
+    result?: {
+      deploy?: string;
+      deployOnUpdate?: boolean;
+      restartScheduled?: boolean;
+      pm2AppName?: string | null;
+      note?: string;
+    };
+  }>;
+};
+
+type AgentReportHouse = {
+  name?: string;
+  slack_channel?: string;
+  speed_threshold_mbps?: number;
+  alert_after_failures?: number;
+  alert_state?: AlertState;
+  service_ids?: string[];
+};
+
+/**
+ * Page Slack for fresh incidents / recoveries and persist alert_state.
+ * Fresh keys are only saved when the page was delivered, so a Slack outage
+ * means the next report tries again. Recoveries and removals are always saved.
+ */
+async function alertOnReport(
+  env: Env,
+  sb: SupabaseClient,
+  token: string,
+  body: AgentReportBody,
+  data: unknown,
+): Promise<void> {
+  const house = (data as { house?: AgentReportHouse } | null)?.house;
+  const channel = house?.slack_channel || DEFAULT_SLACK_CHANNEL;
+  const houseName = house?.name || body.houseName;
+  const reportedServices = (Array.isArray(body.services) ? body.services : []).map((s) => ({
+    id: s.id,
+    name: s.name || s.id || "서비스",
+    host: s.host || null,
+    url: s.url || null,
+    ok: Boolean(s.ok),
+    code: s.code ?? null,
+    expect: s.expect ?? null,
+    ms: s.ms ?? null,
+    error: s.error || null,
+    slackOnFail: s.slackOnFail !== false,
+  }));
+  const jobs = Array.isArray(body.jobs) ? body.jobs : [];
+  const failedJobs = jobs.filter((j) => j.status === "error");
+  const threshold = house?.speed_threshold_mbps;
+  const down = body.speed ? Number(body.speed.down_mbps) : NaN;
+  // A report without a numeric download is not a speed sample (agent_report skips it too).
+  const speedReported = Number.isFinite(down);
+  const speedBelow =
+    speedReported && threshold != null && down < Number(threshold)
+      ? {
+          downMbps: down,
+          thresholdMbps: Number(threshold),
+          upMbps: body.speed?.up_mbps != null ? Number(body.speed.up_mbps) : null,
+        }
+      : null;
+
+  const prev = house?.alert_state || {};
+  const deduped = dedupeAlerts({
+    prev,
+    services: reportedServices,
+    speed: speedBelow,
+    speedReported,
+    jobs: failedJobs,
+    alertAfterFailures: house?.alert_after_failures,
+    serviceIds: Array.isArray(house?.service_ids) ? house!.service_ids : null,
+  });
+
+  let nextState = deduped.nextState;
+  if (deduped.hasFresh && env.SLACK_WEBHOOK_URL) {
+    const delivered = await notifySlack(
+      env,
+      channel,
+      buildOpsAlert({
+        houseName,
+        failingServices: deduped.freshServices,
+        speed: deduped.freshSpeed,
+        failedJobs: deduped.freshJobs,
+      }),
+    );
+    if (!delivered) nextState = withoutFresh(deduped, prev);
+  }
+
+  if (deduped.hasRecovery && env.SLACK_WEBHOOK_URL) {
+    // Not retried: the incident is over either way.
+    await notifySlack(
+      env,
+      channel,
+      buildRecoveryMessage({
+        houseName,
+        services: deduped.recoveredServices,
+        speed: deduped.speedRecovered,
+        agentReconnected: deduped.agentReconnected,
+      }),
+    );
+  }
+
+  if (JSON.stringify(prev) !== JSON.stringify(nextState)) {
+    const { error } = await sb.rpc("agent_set_alert_state", { p_token: token, p_state: nextState });
+    if (error) log("agent.alert_state.save_failed", { error: error.message });
+  }
+
+  // One-shot success notice when remote update ran Worker deploy.
+  const deployOk = jobs.find(
+    (j) => j.kind === "agent_update" && j.status === "done" && Boolean(j.result?.deploy),
+  );
+  if (deployOk) {
+    await notifySlack(
+      env,
+      channel,
+      buildDeploySuccessMessage({
+        houseName,
+        agentVersion: body.agentStatus?.version,
+        hostname: body.agentStatus?.hostname,
+        pm2AppName: deployOk.result?.pm2AppName,
+        restartScheduled: Boolean(deployOk.result?.restartScheduled),
+        note: deployOk.result?.note,
+      }),
+    );
+  }
+}
+
 export async function handleApi(req: Request, env: Env, path: string): Promise<Response> {
   try {
     if (req.method === "GET" && path === "/api/config") {
@@ -101,7 +273,7 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
     if (path === "/api/bootstrap" && req.method === "POST") {
       const auth = await requireUser(env, req);
       if ("error" in auth && auth.error) return auth.error;
-      const body = (await req.json()) as { houseName?: string };
+      const body = await readJson<{ houseName?: string }>(req);
       const houseName = (body.houseName || "").trim();
       if (!houseName) return json({ error: "집 이름이 필요합니다." }, 400);
 
@@ -126,7 +298,7 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
     if (path === "/api/servers" && req.method === "POST") {
       const auth = await requireUser(env, req);
       if ("error" in auth && auth.error) return auth.error;
-      const body = (await req.json()) as {
+      const body = await readJson<{
         houseId: string;
         name: string;
         role?: string;
@@ -140,9 +312,14 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
         pveNode?: string;
         pveTokenId?: string;
         pveTokenSecret?: string;
-      };
+      }>(req);
 
-      if (!body.houseId) return json({ error: "집이 필요합니다." }, 400);
+      if (!isUuid(body.houseId)) return json({ error: "집이 필요합니다." }, 400);
+      if (body.pveEnabled) {
+        // DB trigger enforces this too; check first for a readable 403.
+        const forbidden = await requireHouseOwner(auth.sb!, body.houseId);
+        if (forbidden) return forbidden;
+      }
       if (!body.name?.trim() && !body.pveEnabled) return json({ error: "이름이 필요합니다." }, 400);
       const wolMode = body.wolMode === "manual" ? "manual" : "off";
       if (body.wolMode && body.wolMode !== "manual" && body.wolMode !== "off") {
@@ -198,7 +375,14 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
           p_server_id: server.id,
           p_secret: secret,
         });
-        if (secretError) return json({ error: secretError.message }, 400);
+        if (secretError) {
+          // No half-configured Proxmox link without a secret: roll back the row.
+          const { error: cleanupError } = await auth.sb!.from("servers").delete().eq("id", server.id);
+          if (cleanupError) {
+            log("servers.rollback_failed", { serverId: server.id, error: cleanupError.message });
+          }
+          return json({ error: secretError.message }, 400);
+        }
       }
 
       let syncQueued = false;
@@ -219,6 +403,11 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
       if ("error" in auth && auth.error) return auth.error;
       const id = path.split("/")[3];
       if (!isUuid(id)) return json({ error: "잘못된 서버 ID" }, 400);
+      const { data: target } = await auth.sb!.from("servers").select("house_id").eq("id", id).maybeSingle();
+      if (!target) return json({ error: "서버를 찾을 수 없습니다." }, 404);
+      // RLS only lets the owner delete; without this a member would just see "not found".
+      const forbidden = await requireHouseOwner(auth.sb!, target.house_id);
+      if (forbidden) return forbidden;
       const { data, error } = await auth.sb!.from("servers").delete().eq("id", id).select("id");
       if (error) return json({ error: error.message }, 400);
       if (!data?.length) return json({ error: "서버를 찾을 수 없습니다." }, 404);
@@ -228,7 +417,7 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
     if (path === "/api/services" && req.method === "POST") {
       const auth = await requireUser(env, req);
       if ("error" in auth && auth.error) return auth.error;
-      const body = (await req.json()) as ServiceInput & { houseId?: string; checkNow?: boolean };
+      const body = await readJson<ServiceInput & { houseId?: string; checkNow?: boolean }>(req);
       if (!isUuid(body.houseId)) return json({ error: "집이 필요합니다." }, 400);
       const parsed = parseServiceInput(body);
       if (!parsed.ok) return json({ error: parsed.error }, 400);
@@ -268,7 +457,7 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
       if ("error" in auth && auth.error) return auth.error;
       const id = path.split("/")[3];
       if (!isUuid(id)) return json({ error: "잘못된 서비스 ID" }, 400);
-      const body = (await req.json()) as ServiceInput;
+      const body = await readJson<ServiceInput>(req);
       const parsed = parseServiceInput(body, { partial: true });
       if (!parsed.ok) return json({ error: parsed.error }, 400);
 
@@ -334,12 +523,17 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
     if (path === "/api/jobs" && req.method === "POST") {
       const auth = await requireUser(env, req);
       if ("error" in auth && auth.error) return auth.error;
-      const body = (await req.json()) as {
+      const body = await readJson<{
         houseId: string;
         kind: "wake" | "health_all" | "health_one" | "pve_sync" | "speed_probe" | "agent_update";
         payload?: Record<string, unknown>;
-      };
+      }>(req);
       if (!isUuid(body.houseId) || !JOB_KINDS.has(body.kind)) return json({ error: "잘못된 요청" }, 400);
+      if (body.kind === "agent_update") {
+        // git pull + deploy on the home host: owner only (also enforced by RLS).
+        const forbidden = await requireHouseOwner(auth.sb!, body.houseId);
+        if (forbidden) return forbidden;
+      }
       const { data: job, error } = await auth.sb!
         .from("agent_jobs")
         .insert({
@@ -358,16 +552,25 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
     if (path === "/api/agent/token" && req.method === "POST") {
       const auth = await requireUser(env, req);
       if ("error" in auth && auth.error) return auth.error;
-      const body = (await req.json()) as { houseId: string; agentUrl?: string; agentHostLabel?: string };
-      if (!body.houseId) return json({ error: "집이 필요합니다." }, 400);
+      const body = await readJson<{ houseId: string; agentUrl?: string; agentHostLabel?: string }>(req);
+      if (!isUuid(body.houseId)) return json({ error: "집이 필요합니다." }, 400);
       const forbidden = await requireHouseOwner(auth.sb!, body.houseId);
       if (forbidden) return forbidden;
 
-      let agentUrl: string | null = null;
-      if (body.agentUrl?.trim()) {
-        const checked = assertHttpUrl(body.agentUrl, { field: "에이전트 URL" });
-        if (!checked.ok) return json({ error: checked.error }, 400);
-        agentUrl = checked.url;
+      // Omitted fields keep their current value; "" clears.
+      const update: Record<string, unknown> = {};
+      if (body.agentUrl !== undefined) {
+        let agentUrl: string | null = null;
+        if (typeof body.agentUrl === "string" && body.agentUrl.trim()) {
+          const checked = assertHttpUrl(body.agentUrl, { field: "에이전트 URL" });
+          if (!checked.ok) return json({ error: checked.error }, 400);
+          agentUrl = checked.url;
+        }
+        update.agent_url = agentUrl;
+      }
+      if (body.agentHostLabel !== undefined) {
+        update.agent_host_label =
+          typeof body.agentHostLabel === "string" && body.agentHostLabel.trim() ? body.agentHostLabel.trim() : null;
       }
 
       const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
@@ -375,9 +578,8 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
       const { error } = await auth.sb!
         .from("houses")
         .update({
+          ...update,
           agent_token_hash: hash,
-          agent_url: agentUrl,
-          agent_host_label: body.agentHostLabel?.trim() || null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", body.houseId);
@@ -398,129 +600,18 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
     if (path === "/api/agent/report" && req.method === "POST") {
       const token = bearer(req);
       if (!token) return json({ error: "unauthorized" }, 401);
-      const body = (await req.json()) as {
-        houseName?: string;
-        agentStatus?: {
-          version?: string;
-          hostname?: string;
-        };
-        services?: Array<{
-          id?: string;
-          name?: string;
-          host?: string;
-          url?: string;
-          ok: boolean;
-          code?: number;
-          expect?: number;
-          ms?: number;
-          error?: string;
-          slackOnFail?: boolean;
-        }>;
-        speed?: { down_mbps: number; up_mbps?: number };
-        jobs?: Array<{
-          id?: string;
-          kind?: string;
-          status: string;
-          error?: string;
-          result?: {
-            deploy?: string;
-            deployOnUpdate?: boolean;
-            restartScheduled?: boolean;
-            pm2AppName?: string | null;
-            note?: string;
-          };
-        }>;
-      };
+      const body = await readJson<AgentReportBody>(req);
       const sb = agentDb(env);
       if (sb instanceof Response) return sb;
       const { data, error } = await sb.rpc("agent_report", { p_token: token, p_payload: body });
       if (error) return agentRpcError(error.message);
 
-      const house = (data as {
-        house?: {
-          name?: string;
-          slack_channel?: string;
-          speed_threshold_mbps?: number;
-          alert_state?: Record<string, { since?: string; name?: string; kind?: string }>;
-        };
-      } | null)?.house;
-      const channel = house?.slack_channel || "#alerts-janitor";
-      const reportedServices = (body.services || []).map((s) => ({
-        id: s.id,
-        name: s.name || s.id || "서비스",
-        host: s.host || null,
-        url: s.url || null,
-        ok: Boolean(s.ok),
-        code: s.code ?? null,
-        expect: s.expect ?? null,
-        ms: s.ms ?? null,
-        error: s.error || null,
-        slackOnFail: s.slackOnFail !== false,
-      }));
-      const failedJobs = (body.jobs || []).filter((j) => j.status === "error");
-      const threshold = house?.speed_threshold_mbps;
-      const speedBelow =
-        body.speed &&
-        threshold != null &&
-        Number(body.speed.down_mbps) < Number(threshold)
-          ? {
-              downMbps: Number(body.speed.down_mbps),
-              thresholdMbps: Number(threshold),
-              upMbps: body.speed.up_mbps != null ? Number(body.speed.up_mbps) : null,
-            }
-          : null;
-
-      const deduped = dedupeAlerts({
-        prev: house?.alert_state,
-        services: reportedServices,
-        speed: speedBelow,
-        speedReported: body.speed != null,
-        jobs: failedJobs,
-      });
-
-      if (deduped.hasFresh) {
-        await notifySlack(
-          env,
-          channel,
-          buildOpsAlert({
-            houseName: body.houseName || house?.name,
-            failingServices: deduped.freshServices,
-            speed: deduped.freshSpeed,
-            failedJobs: deduped.freshJobs,
-          }),
-        );
-      }
-
-      // Persist open incidents even when nothing fresh (recoveries clear keys).
-      const prevJson = JSON.stringify(house?.alert_state || {});
-      const nextJson = JSON.stringify(deduped.nextState);
-      if (prevJson !== nextJson) {
-        await sb.rpc("agent_set_alert_state", {
-          p_token: token,
-          p_state: deduped.nextState,
-        });
-      }
-
-      // One-shot success notice when remote update ran Worker deploy.
-      const deployOk = (body.jobs || []).find(
-        (j) =>
-          j.kind === "agent_update" &&
-          j.status === "done" &&
-          Boolean(j.result?.deploy),
-      );
-      if (deployOk) {
-        await notifySlack(
-          env,
-          channel,
-          buildDeploySuccessMessage({
-            houseName: body.houseName || house?.name,
-            agentVersion: body.agentStatus?.version,
-            hostname: body.agentStatus?.hostname,
-            pm2AppName: deployOk.result?.pm2AppName,
-            restartScheduled: Boolean(deployOk.result?.restartScheduled),
-            note: deployOk.result?.note,
-          }),
-        );
+      // The report is already stored. Alerting is best-effort: a Slack or alert_state
+      // failure must not turn into a 5xx, or the agent re-sends the same logs/results.
+      try {
+        await alertOnReport(env, sb, token, body, data);
+      } catch (err) {
+        log("agent.report.alert_failed", { error: err instanceof Error ? err.message : String(err) });
       }
 
       return json(data || { ok: true });
@@ -529,7 +620,7 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
     if (path === "/api/invite" && req.method === "POST") {
       const auth = await requireUser(env, req);
       if ("error" in auth && auth.error) return auth.error;
-      const body = (await req.json()) as { houseId: string; email: string };
+      const body = await readJson<{ houseId: string; email: string }>(req);
       const email = body.email?.trim().toLowerCase();
       if (!body.houseId || !email?.includes("@")) return json({ error: "이메일이 필요합니다." }, 400);
       const forbidden = await requireHouseOwner(auth.sb!, body.houseId);
@@ -546,6 +637,7 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
 
     return json({ error: "not found" }, 404);
   } catch (err) {
+    if (err instanceof BadRequestError) return json({ error: err.message }, 400);
     const message = err instanceof Error ? err.message : "server error";
     return json({ error: message }, 500);
   }
